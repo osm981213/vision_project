@@ -3,27 +3,29 @@
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from region.regionSearch import CCTVProcessor
+from module.region.regionsearch import CCTVProcessor
+from module.region.vehiclecounter import VehicleCounter
 import cv2
 import numpy as np
 import asyncio
 import json
-import base64
-from datetime import datetime
-from collections import defaultdict
-from queue import Queue
-import threading
-import time
 import shutil
 import os
 from uuid import uuid4
 from pathlib import Path
 
 app = FastAPI()
+UPLOAD_DIR = Path("uploaded_videos")
 
 # Create upload directory if not exists
-UPLOAD_DIR = Path("uploaded_videos")
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Clean up old uploaded videos on startup
+for filename in os.listdir(UPLOAD_DIR):
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if os.path.isfile(file_path):
+        os.remove(file_path)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,11 +41,7 @@ counter = VehicleCounter()
 
 processor = CCTVProcessor()
 
-def resolve_video_path(video_id: str) -> str:
-        p = UPLOAD_DIR / video_id
-        if not p.exists():
-            raise FileNotFoundError(f"video not found: {video_id}")
-        return str(p)
+
 
 # --------------------------
 # WEBSOCKET
@@ -66,7 +64,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         await websocket.send_json({"type":"error","message":"model load failed"})
                         continue
 
-                    ok_src = processor.open_source(msg.get("source_type"), msg.get("source"))
+                    ok_src = processor.open_source(msg.get("source_type"), msg.get("source"), UPLOAD_DIR)
                     if not ok_src:
                         await websocket.send_json({"type":"error","message":"source open failed"})
                         processor.running = False
@@ -74,13 +72,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     processor.regions = msg.get("regions", [])
                     processor.running = True
-                    processor.start_inference_thread()
-                    # processor.regions = msg.get("regions", [])
-                    # processor.load_model(msg.get("model_size", "s"), msg.get("custom_weights"))
-                    # processor.open_source(msg.get("source_type", "rtsp"), msg.get("source"))
-
-                    # processor.running = True
-                    # processor.start_inference_thread()
+                    processor.start_inference_thread(counter)
                     
 
                 elif msg["type"] == "update_regions":

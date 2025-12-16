@@ -1,5 +1,6 @@
 # 프로젝트 목적
 YOLO를 기반한 CCTV 예측 모델 솔루션
+
 [**팀 노션 링크**](https://www.notion.so/02-2bb3c414e0cc80ee9194dbbb3e74dd87?source=copy_link)
 
 # 팀원
