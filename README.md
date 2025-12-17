@@ -30,6 +30,14 @@ VISION_PROJECT
     └─platform - 프로젝트에 사용될 플랫폼 위치
         └─ backend 플랫폼의 백엔드
             └─ model 플랫폼에 사용될 모델 보관소
+                model_registry.py 모델들의 format
+                model.json 모델들의 명칭, 특징, 플랫폼에 제공될 명칭을 저장할 json
+            └─ module 플랫폼에 사용될 모듈 보관소
+                └─ CalibaratedSpeed 변수 기반 속도 측정 모듈
+                └─ region Region 기반 통계 제공 모듈
+                └─ TOFSpeed 통과 스피드 기반
+                └─ utils 편의성 유틸
+            └─ uploaded_videos 플랫폼을 통해 업로드를 할 시 저장할 폴더
         └─ frontend 플랫폼의 화면단 (Vite 기반)
 ```
 

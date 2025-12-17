@@ -5,8 +5,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from module.region.regionsearch import CCTVProcessor
 from module.region.vehiclecounter import VehicleCounter
-import cv2
-import numpy as np
+from module.utils.model_loader import load_model_registry, save_model_registry, init_default_models
+from model.model_registry import ModelMeta
 import asyncio
 import json
 import shutil
@@ -15,11 +15,19 @@ from uuid import uuid4
 from pathlib import Path
 
 app = FastAPI()
+counter = VehicleCounter()
+processor = CCTVProcessor()
+
+MODEL_DIR = Path("model")
+CUSTOM_MODEL_DIR = MODEL_DIR / "custom"
 UPLOAD_DIR = Path("uploaded_videos")
 
 # Create upload directory if not exists
-
+CUSTOM_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Initialize default models on startup
+init_default_models()
 
 # Clean up old uploaded videos on startup
 for filename in os.listdir(UPLOAD_DIR):
@@ -27,6 +35,7 @@ for filename in os.listdir(UPLOAD_DIR):
     if os.path.isfile(file_path):
         os.remove(file_path)
 
+# secruity - CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
@@ -34,14 +43,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-counter = VehicleCounter()
-
-
-processor = CCTVProcessor()
-
-
 
 # --------------------------
 # WEBSOCKET
@@ -107,12 +108,16 @@ async def websocket_endpoint(websocket: WebSocket):
         processor.running = False
         print("WebSocket disconnected")
 
+# --------------------------
+# REST API
+# --------------------------
 
+# Root Endpoint
 @app.get("/")
 async def root():
     return {"message": "CCTV YOLO11s Tracking System API"}
 
-
+# Health Check
 @app.get("/health")
 async def health():
     return {
@@ -121,6 +126,7 @@ async def health():
         "source_active": processor.cap is not None and processor.cap.isOpened()
     }
 
+# 영상 업로드
 @app.post("/upload_video")
 async def upload_video(file: UploadFile = File(...)):
     ext = Path(file.filename).suffix.lower() or ".mp4"
@@ -132,6 +138,59 @@ async def upload_video(file: UploadFile = File(...)):
 
     return {"status": "success", "video_id": video_id}
 
+# 모델 리스트 호출
+@app.get("/models")
+async def get_models():
+    models = load_model_registry()
+
+    return {
+        "models": [
+            {
+                "id": m.id,
+                "display_name": m.display_name,
+                "description": m.description,
+                "path": m.file,
+                "default": m.default
+            }
+            for m in models
+        ]
+    }
+
+
+# 모델 업로드
+@app.post("/upload_model")
+async def upload_model(
+    file: UploadFile = File(...),
+    display_name: str = "Custom YOLO Model",
+    description: str = ""
+):
+    if not file.filename.endswith(".pt"):
+        return {"error": "Only .pt files allowed"}
+
+    model_id = uuid4().hex[:8]
+    filename = f"{model_id}_{file.filename}"
+    save_path = CUSTOM_MODEL_DIR / filename
+
+    with save_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    models = load_model_registry()
+    models.append(ModelMeta(
+        id=model_id,
+        file=str(save_path),
+        display_name=display_name,
+        description=description,
+        type="custom"
+    ))
+    save_model_registry(models)
+
+    return {"status": "success"}
+
+
+
+# --------------------------
+# RUN SERVER
+# --------------------------
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,19 @@
+{
+  "models": [
+    {
+      "id": "yolo11s",
+      "file": "model/yolo11s.pt",
+      "display_name": "YOLO11 Small (Balanced)",
+      "description": "Fast and stable model for general CCTV usage",
+      "type": "builtin",
+      "default": true
+    },
+    {
+      "id": "yolo11m",
+      "file": "model/yolo11m.pt",
+      "display_name": "YOLO11 Medium (Accurate)",
+      "description": "Higher accuracy, slower inference",
+      "type": "builtin"
+    }
+  ]
+}

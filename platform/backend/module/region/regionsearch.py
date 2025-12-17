@@ -27,6 +27,10 @@ class CCTVProcessor:
 
         self.inference_thread = None
 
+# --------------------------
+# Video Source and Model Management
+# model_size: 's', 'm', 'l', 'x' default 's'
+# --------------------------
     def load_model(self, model_size='s', custom_weights=None):
         try:
             if custom_weights and custom_weights.strip():
@@ -54,11 +58,6 @@ class CCTVProcessor:
 
             elif source_type == "url":
                 self.cap = cv2.VideoCapture(source)
-            # else:
-            #     # For testing, use a local video file
-            #     # src = "C:/Users/Woori/Downloads/L030032.mp4"
-            #     src = src.replace("\\", "/")
-            #     self.cap = cv2.VideoCapture(src)
 
             if not self.cap.isOpened():
                 print("Failed to open video source")
@@ -99,6 +98,7 @@ class CCTVProcessor:
             # 추론
             if self.regions:
                 for region in self.regions:
+                    print(region['id'], "region id")
                     #x1, y1, x2, y2 = region['x'], region['y'], region['x'] + region['w'], region['y'] + region['h']
                     x1, y1, x2, y2 = int(region['x']), int(region['y']), int(region['x'] + region['w']), int(region['y'] + region['h'])
                     
@@ -111,16 +111,16 @@ class CCTVProcessor:
                         verbose=False
                     )
                     
-                    #save frame to disk for debug
-                    cv2.imwrite(f"uploaded_videos/debug_region_{region['id']}.jpg", regionFrame)
-                    cv2.imwrite(f"uploaded_videos/debug_fullframe_{region['id']}.jpg", results[0].plot())
+                    # save frame to disk for debug
+                    # cv2.imwrite(f"uploaded_videos/debug_region_{region['id']}.jpg", regionFrame)
+                    # cv2.imwrite(f"uploaded_videos/debug_fullframe_{region['id']}.jpg", results[0].plot())
                     
                     if results[0].boxes.id is not None:
                         boxes = results[0].boxes.xyxy.cpu().numpy()
-                        track_ids = results[0].boxes.id.cpu().numpy().astype(int)
+                        # track_ids = results[0].boxes.id.cpu().numpy().astype(int)
                         classes = results[0].boxes.cls.cpu().numpy().astype(int)
 
-                        for box, track_id, cls in zip(boxes, track_ids, classes):
+                        for box, track_id, cls in zip(boxes, classes):
                             x1, y1, x2, y2 = box
                             
                             # Adjust box coordinates to full resized frame
@@ -229,40 +229,6 @@ class CCTVProcessor:
                             (int(region['x']), int(region['y']) - 5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 1)
 
-            # version control #1 
-            # if results[0].boxes.id is not None:
-            #     boxes = results[0].boxes.xyxy.cpu().numpy()
-            #     track_ids = results[0].boxes.id.cpu().numpy().astype(int)
-            #     classes = results[0].boxes.cls.cpu().numpy().astype(int)
-
-            #     for box, track_id, cls in zip(boxes, track_ids, classes):
-            #         x1, y1, x2, y2 = box
-            #         cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-            #         vehicle_class = class_names.get(cls, "unknown")
-
-            #         # Count vehicle
-            #         if len(self.regions) == 0:
-            #             counter.add_vehicle("global", vehicle_class, track_id)
-            #         else:
-            #             for region in self.regions:
-            #                 if self.point_in_region(cx, cy, region):
-            #                     counter.add_vehicle(region["id"], vehicle_class, track_id)
-                                
-            #         # Adjust box coordinates to original frame size
-            #         x1 *= scale_x
-            #         y1 *= scale_y
-            #         x2 *= scale_x
-            #         y2 *= scale_y
-
-
-            #         detections.append({
-            #             "x": int(x1),
-            #             "y": int(y1),
-            #             "w": int(x2 - x1),
-            #             "h": int(y2 - y1),
-            #             "class": vehicle_class,
-            #             "track_id": int(track_id)
-            #         })
             endTime = time.time()
             print("Inference Time:", (endTime - startTime) * 1000, "ms")
 
