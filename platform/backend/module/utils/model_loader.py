@@ -16,21 +16,27 @@ MODEL_JSON = MODEL_DIR / "models.json"
 BASE_MODELS = [
     {
         "id": "yolo11n",
-        "file": "model/yolo11n.pt",
-        "display_name": "YOLO11 Nano (Fast)",
+        "file": "yolo11n",
+        "display_name": "YOLO11n (Nano - Fastest)",
         "description": "Fastest model, low latency",
-        "classes": [2, 3, 5, 7],
+        "classes": {"car": 2, "bus": 5, "truck": 7, "motorcycle": 3},
         "type": "builtin",
-        "default": False
+        "default": False,
+        "conf": 0.25,
+        "dev": False,
+        "mode": "track"
     },
     {
         "id": "yolo11s",
-        "file": "model/yolo11s.pt",
-        "display_name": "YOLO11 Small (Balanced)",
+        "file": "yolo11s",
+        "display_name": "YOLO11s (Small - Balanced) ⭐",
         "description": "Balanced speed and accuracy",
-        "classes": [2, 3, 5, 7],
+        "classes": {"car": 2, "bus": 5, "truck": 7, "motorcycle": 3},
         "type": "builtin",
-        "default": True
+        "default": True,
+        "conf": 0.25,
+        "dev": False,
+        "mode": "track"
     }
 ]
 
@@ -98,7 +104,10 @@ def init_default_models():
             description=base["description"],
             classes=base["classes"],
             type="builtin",
-            default=base["default"]
+            default=base["default"],
+            conf=base["conf"],
+            dev=base["dev"],
+            mode=base["mode"]
         )
 
         existing.append(meta)

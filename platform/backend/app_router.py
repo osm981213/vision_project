@@ -1,6 +1,7 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, Form, UploadFile, File
 from pathlib import Path
 import shutil
+import json
 from uuid import uuid4
 from module.utils.model_loader import load_model_registry, save_model_registry
 from model.model_registry import ModelMeta
@@ -30,6 +31,14 @@ async def get_models():
     models = load_model_registry()
 
     return {
+        "models": models
+    }
+
+@router.get("/models")
+async def get_models():
+    models = load_model_registry()
+
+    return {
         "models": [
             {
                 "id": m.id,
@@ -42,19 +51,13 @@ async def get_models():
         ]
     }
 
-
 # 모델 업로드
 @router.post("/upload_model")
 async def upload_model(
     file: UploadFile = File(...),
     display_name: str = Form(...),
-    description: str = Form(""),
-    classes: str = Form(...)
+    description: str = Form("")
 ):
-    """
-    classes: JSON string
-    예: {"car":2,"bus":5}
-    """
     if not file.filename.endswith(".pt"):
         return {"error": "Only .pt files allowed"}
 
@@ -67,6 +70,7 @@ async def upload_model(
         shutil.copyfileobj(file.file, f)
 
     models = load_model_registry()
+    
     models.append(ModelMeta(
         id=model_id,
         file=str(save_path),
@@ -77,15 +81,15 @@ async def upload_model(
     ))
     save_model_registry(models)
 
-    return {"status": "success"}
+    return {"status": "success", "id": model_id, "path": str(save_path)}
 
-# 모델 클래스 맵 수정
-@router.patch("/models/{model_id}/classes")
-async def update_model_classes(model_id: str, classes: dict):
+# 모델 수정
+@router.patch("/models/{model_id}")
+async def update_model(model_id: str, model_data: dict):
     models = load_model_registry()
     for m in models:
         if m.id == model_id:
-            m.classes = classes
+            m.classes = model_data.get("classes", m.classes)
             save_model_registry(models)
             return {"status": "updated"}
     return {"error": "model not found"}

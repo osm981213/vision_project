@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, use } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, Play, Pause, RotateCcw, X, Settings, Upload, Video, ChevronsDown, ChevronsUp } from 'lucide-react';
+import { Camera, Play, Pause, RotateCcw, X, Settings, Upload, Video, ChevronsDown, ChevronsUp, Delete, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const CCTVTracker = () => {
@@ -13,17 +13,21 @@ const CCTVTracker = () => {
   const [regionStats, setRegionStats] = useState({});
   const [showClassModal, setShowClassModal] = useState(false);
   const [editingModel, setEditingModel] = useState(null);
-  const [modelClasses, setModelClasses] = useState({});
-  
+  const [showModelSettings, setShowModelSettings] = useState(false);
+  const [models, setModels] = useState([
+    {id: 'yolo11n', display_name: 'YOLO11n (Nano - Fastest)', description: 'Fastest model, low latency', conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}}, 
+    {id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}}
+  ]);
   
   // Settings
   const [sourceType, setSourceType] = useState('rtsp');
   const [rtspUrl, setRtspUrl] = useState('rtsp://admin:password@192.168.1.100:554/stream');
   const [videoFile, setVideoFile] = useState(null);
   const [httpUrl, setHttpUrl] = useState("");
-  const [modelSize, setModelSize] = useState('s');
+  const [modelTarget, setModelTarget] = useState({id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}});
   const [customWeights, setCustomWeights] = useState('');
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000');
+  const [modelParams, setModelParams] = useState({id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}});  
   
   const canvasRef = useRef(null);
   const drawStartRef = useRef(null);
@@ -31,8 +35,9 @@ const CCTVTracker = () => {
   const imageRef = useRef(new Image());
   const [isHeaderOpen, setIsHeaderOpen] = useState(true);
 
-  // default class IDs
+  // defaults
   const defaultClasses = {car: 2, motorcycle: 3, bus: 5, truck: 7 };
+  const defaultModelParams = {conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}}; // State for model parameters
 
   // WebSocket connection to FastAPI backend
   useEffect(() => {
@@ -64,7 +69,7 @@ const CCTVTracker = () => {
             : sourceType === "file"
             ? videoFile
             : httpUrl,
-          model_size: modelSize,
+          modelTarget: modelTarget,
           custom_weights: customWeights,
           regions: regions
         }));
@@ -76,7 +81,13 @@ const CCTVTracker = () => {
         }
       };
     }
-  }, [isPlaying, sourceType, rtspUrl, videoFile, modelSize, customWeights]);
+  }, [isPlaying, sourceType, rtspUrl, videoFile, modelTarget, customWeights]);
+
+  // load Models from backend on component mount
+  useEffect(() => {
+    loadModels();
+  }, []);
+
 
   // Update regions to backend when changed
   useEffect(() => {
@@ -127,6 +138,13 @@ const CCTVTracker = () => {
     }));
   };
 
+  // load models from backend
+  const loadModels = async () => {
+    const res = await fetch(backendUrl + "/models");
+    const data = await res.json();
+    console.log(data);
+    setModels(data.models);
+  };
 
   const drawFrame = (frameData, detections, resized_size, orig_size) => {
     const canvas = canvasRef.current;
@@ -268,16 +286,17 @@ const CCTVTracker = () => {
 
     const videoId = await uploadVideoToServer(file);
     setVideoFile(videoId)
-    // const file = e.target.files[0];
-    // if (!file) return;
+  };
 
-    // try {
-    //   const uploadedPath = await uploadVideoToServer(file);
-    //   setVideoFile(uploadedPath);
-    // } catch (err) {
-    //   console.error("Upload failed", err);
-    //   alert("Video upload failed");
-    // }
+  const uploadModelSettingsToServer = async (file) => { 
+    const form = new FormData();
+    form.append("model_params", JSON.stringify(modelParams));
+    const res = await fetch(backendUrl + "/upload_model", {
+      method: "POST",
+      body: form
+    });
+    const data = await res.json();
+    return data.path;
   };
 
   const togglePlayPause = () => {
@@ -380,9 +399,9 @@ const CCTVTracker = () => {
             <div className="mb-3 p-3 bg-gray-700 rounded text-sm">
                 <div className="font-medium mb-1">Drawing Tool Instructions:</div>
                 <ul className="text-gray-300 space-y-1">
-                <li>• Click and drag on CCTV to draw region</li>
-                <li>• Click region box below to view details</li>
-                <li>• X button removes individual region</li>
+                  <li>• Click and drag on CCTV to draw region</li>
+                  <li>• Click region box below to view details</li>
+                  <li>• X button removes individual region</li>
                 </ul>
             </div>
             )}
@@ -609,22 +628,36 @@ const CCTVTracker = () => {
             {/* Model Selection */}
             <div>
               <label className="block text-sm font-medium mb-2">🤖 YOLO11 Model</label>
-              <select
-                value={modelSize}
-                onChange={(e) => setModelSize(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-              >
-                <option value="n">YOLO11n (Nano - Fastest)</option>
-                <option value="s">YOLO11s (Small - Balanced) ⭐</option>
-                <option value="m">YOLO11m (Medium)</option>
-                <option value="l">YOLO11l (Large - Most Accurate)</option>
-                <option value="x">YOLO11x (Extra Large)</option>
+              {/* 모델 불러오기 성공 */}
+              {models && models.length > 0 && (
+                <select
+                  value={modelTarget}
+                  onChange={(e) => setModelTarget(models.find(model => model.name === e.target.value))}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+                >
+                  {models.map((model) => (
+                    <option key={model.name} value={model.name}>
+                      {model.display_name} {model.dev ? '(Dev)' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {/* 모델 불러오기 실패시 기본 모델 세팅 */}
+              {(!models || models.length === 0) && (
+                <select
+                  value={modelTarget}
+                  onChange={(e) => setModelTarget(models.find(model => model.name === e.target.value))}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
+                >
+                <option value="yolo11n">YOLO11n (Nano - Fastest)</option>
+                <option value="yolo11s">YOLO11s (Small - Balanced) ⭐</option>
               </select>
+              )}
             </div>
             
             {/* Custom Weights */}
             <div>
-              <label className="block text-sm font-medium mb-2">⚙️ Custom Weights (Optional)</label>
+              <label className="block text-sm font-medium mb-2">⚙️ Custom Weights </label>
               <input
                 type="file"
                 accept=".pt"
@@ -634,8 +667,7 @@ const CCTVTracker = () => {
 
                   const form = new FormData();
                   form.append("file", file);
-                  form.append("classes", JSON.stringify(modelClasses));
-
+                  form.append("model_params", JSON.stringify(modelParams));
 
                   const res = await fetch(backendUrl + "/upload_model", {
                     method: "POST",
@@ -645,7 +677,9 @@ const CCTVTracker = () => {
                   const data = await res.json();
 
                   // 업로드 후 모델 목록 다시 불러오기
-                  setSelectedModel(data.path);
+                  // setModelTarget(data.path);
+                  loadModels();
+                  setModelTarget(data);
                 }}
               />
 
@@ -653,26 +687,34 @@ const CCTVTracker = () => {
                 Path to .pt file or leave empty for default
               </div>
             </div>
-            
+
+            {/* Model Settings */}
+            <div>
+              <button
+                onClick={() => setShowModelSettings(!showModelSettings)}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded hover:bg-gray-600 text-sm flex items-center justify-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                Model Settings
+              </button>
+            </div>
+
             {/* Info Panel */}
             <div className="bg-gray-700 rounded p-3 text-sm space-y-2">
               <div className="font-medium text-yellow-400 mb-2">ℹ️ Current Settings</div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Tracking Classes:</span>
-                <span className="font-medium">Car, Bus, Truck, Motorcycle</span>
+                <span className="font-medium">{Object.keys(modelParams.classes).join(', ')}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Count Method:</span>
-                <span className="font-medium">Entry Detection</span>
+                <span className="text-gray-400">Mode:</span>
+                <span className="font-medium">{modelParams.mode}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Duplicate Handling:</span>
-                <span className="font-medium">Track ID Based</span>
+                <span className="text-gray-400">Confidence Threshold:</span>
+                <span className="font-medium">{modelParams.conf}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Update Interval:</span>
-                <span className="font-medium">1 minute</span>
-              </div>
+
             </div>
             
             <button 
@@ -689,53 +731,171 @@ const CCTVTracker = () => {
           </div>
         </div>
       </div>
-      {showClassModal && (
+      {/* Model Settings Modal */}
+      {showModelSettings && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
           <div className="bg-gray-800 rounded-lg p-6 w-[500px]">
-            <h3 className="text-lg font-bold mb-4">
-              Configure Detection Classes
-            </h3>
+            <div className='flex items-center mb-4 justify-between'>
+              <h3 className="text-lg font-bold">
+                Model Settings
+              </h3>
+              {/* close button */}
+              <div>
+                <button
+                  onClick={() => setShowModelSettings(false)}
+                >
+                  <X />
+                </button>
+              </div>
+            </div>
+            {/* target model */}
 
-            {Object.entries(modelClasses).map(([name, id]) => (
-              <div key={name} className="flex gap-2 mb-2">
+            <div className="mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Model id</label>
                 <input
-                  value={name}
-                  disabled
-                  className="flex-1 px-2 py-1 bg-gray-700 rounded"
-                />
-                <input
-                  type="number"
-                  value={id}
-                  onChange={(e) =>
-                    setModelClasses(prev => ({
-                      ...prev,
-                      [name]: Number(e.target.value)
-                    }))
-                  }
-                  className="w-20 px-2 py-1 bg-gray-700 rounded"
+                  type="text"
+                  value={modelTarget}
+                  onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                 />
               </div>
-            ))}
-
-            <button
-              className="mt-4 w-full bg-blue-600 py-2 rounded"
-              onClick={async () => {
-                await fetch(
-                  `${backendUrl}/models/${editingModel.id}/classes`,
-                  {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(modelClasses)
+            </div>
+            <div className="mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Model Display N</label>
+                <input
+                  type="text"
+                  value={modelTarget}
+                  onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+                />
+              </div>
+            </div>
+            <div className="mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Model Description</label>
+                <input
+                  type="text"
+                  value={modelTarget}
+                  onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+                />
+              </div>
+            </div>
+            {/* Model settings form */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Confidence Threshold</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  defaultValue={defaultModelParams.conf}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+                  onChange={(e) => {
+                    // handle change
+                    setModelParams({...modelParams, conf: parseFloat(e.target.value)});
+                  }}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="use-dev"
+                  defaultChecked={defaultModelParams.dev}
+                  onChange={(e) => {
+                    // handle change
+                    setModelParams({...modelParams, dev: e.target.checked});
+                  }}
+                />
+                <label htmlFor="use-dev" className="text-sm">Use Development Model</label>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Mode</label>
+                <select
+                  defaultValue={defaultModelParams.mode}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+                  onChange={(e) => {
+                    // handle change
+                    setModelParams({...modelParams, mode: e.target.value});
+                  }}
+                >
+                  <option value="track">Track</option>
+                  <option value="detect">Detect Only</option>
+                </select>
+              </div>
+              {/* classes configuration */}
+              <h2 className="text-md font-bold mt-4 mb-2">🎯 Detection Classes</h2>
+              {Object.entries(modelParams.classes).map(([name, id]) => (
+                <div key={name} className="flex gap-2 mb-2">
+                  <input
+                    value={name}
+                    className="flex-1 px-2 py-1 bg-gray-700 rounded"
+                  />
+                  <input
+                    type="number"
+                    value={id}
+                    onChange={(e) =>
+                      setModelParams(prev => ({
+                        ...prev,
+                        classes: {
+                          ...prev.classes,
+                          [name]: Number(e.target.value)
+                        }
+                      }))
+                    }
+                    className="w-20 px-2 py-1 bg-gray-700 rounded"
+                  />
+                  {/* Delete button */}
+                  <button
+                    onClick={() => {
+                      setModelParams(prev => {
+                        const updatedClasses = { ...prev.classes };
+                        delete updatedClasses[name];
+                        return {
+                          ...prev,
+                          classes: updatedClasses
+                        };
+                      });
+                    }}
+                  >
+                    <Delete className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              {/* Add new class */}
+              <button
+                onClick={() => {
+                  const newClassName = prompt("Enter new class name:");
+                  const newClassId = prompt("Enter new class ID (number):");
+                  if (newClassName && newClassId) {
+                    setModelParams(prev => ({
+                      ...prev,
+                      classes: {
+                        ...prev.classes,
+                        [newClassName]: Number(newClassId)
+                      }
+                    }));
                   }
-                );
-                setShowClassModal(false);
-              }}
-            >
-              Save
-            </button>
+                }}
+                className="mt-2 px-3 py-1 bg-blue-600 rounded flex items-center gap-2 text-sm"
+              >
+              <Plus className="w-4 h-4" />
+                Add Class
+              </button>
+
+              <button
+                className="mt-4 w-full bg-blue-600 py-2 rounded"
+                onClick={() => setShowModelSettings(false)}
+              >
+                  Save Settings
+              </button>
+            </div>  
           </div>
         </div>
       )}
+
+      
 
       {/* Region Detail Popup */}
       {showPopup && (

@@ -4,10 +4,12 @@ import threading
 import time
 import cv2
 from ultralytics import YOLO
-from domain.detection import Detection
+
+from platform.backend.module.region.domain import region
+from .domain.detection import Detection
 from collections import defaultdict
 
-from platform.backend.model.model_registry import ModelMeta
+from model.model_registry import ModelMeta
 
 from .vehiclecounter import VehicleCounter
 
@@ -37,12 +39,12 @@ class CCTVProcessor:
 # Video Source and Model Management
 # model_size: 's', 'm', 'l', 'x' default 's'
 # --------------------------
-    def load_model(self, model_size='s', custom_weights=None):
+    def load_model(self, modelTarget='yolo11s', custom_weights=None):
         try:
             if custom_weights and custom_weights.strip():
-                self.model = YOLO(custom_weights)
+                self.model = YOLO(f"model/{custom_weights}.pt")
             else:
-                self.model = YOLO(f"model/yolo11{model_size}.pt")
+                self.model = YOLO(f"model/{modelTarget}.pt")
             print("Model loaded")
             return True
         except Exception as e:
@@ -340,9 +342,7 @@ class CCTVProcessor:
 class PredictInference:
     def __init__(self, model, model_meta: ModelMeta):
         self.model = model
-        self.class_map = model_meta.classes  # {"car":2, ...}
-        self.class_ids = list(self.class_map.values())
-        self.id_to_name = {v: k for k, v in self.class_map.items()}
+        self.model_meta = model_meta
         
     def infer(self, frame, regions):
         detections = []
@@ -400,47 +400,93 @@ class PredictVehicleCounter(VehicleCounter):
 class TrackInference:
     def __init__(self, model, model_meta: ModelMeta):
         self.model = model
-        self.class_map = model_meta.classes  # {"car":2, ...}
-        self.class_ids = list(self.class_map.values())
-        self.id_to_name = {v: k for k, v in self.class_map.items()}
+        self.model_meta = model_meta
 
     def infer(self, frame, regions):
         detections = []
+        results = None
+        regionFrame = None
 
-        results = self.model.track(
-            frame,
-            persist=True,
-            classes=[2,3,5,7],
-            verbose=False
-        )
-
-        boxes = results[0].boxes
-        if boxes is None or boxes.id is None:
-            return detections
-
-        for box, cls, tid in zip(
-            boxes.xyxy.cpu().numpy(),
-            boxes.cls.cpu().numpy().astype(int),
-            boxes.id.cpu().numpy().astype(int)
-        ):
-            cx = (box[0] + box[2]) / 2
-            cy = (box[1] + box[3]) / 2
-
-            region_id = None
-            for r in regions:
-                if r['x'] <= cx <= r['x']+r['w'] and r['y'] <= cy <= r['y']+r['h']:
-                    region_id = r['id']
-                    break
-
-            detections.append(
-                Detection(
-                    x1=int(box[0]), y1=int(box[1]),
-                    x2=int(box[2]), y2=int(box[3]),
-                    cls=self.class_names[cls],
-                    track_id=tid,
-                    region_id=region_id
-                )
+        if not regions:
+            results = self.model.track(
+                frame,
+                persist=True,
+                classes=[self.model_meta.classes[c] for c in self.model_meta.classes],
+                conf= self.model_meta.conf,
+                verbose=False
             )
+            boxes = results[0].boxes
+            if boxes is None or boxes.id is None:
+                return detections
+
+            for box, cls, tid in zip(
+                boxes.xyxy.cpu().numpy(),
+                boxes.cls.cpu().numpy().astype(int),
+                boxes.id.cpu().numpy().astype(int)
+            ):
+                cx = (box[0] + box[2]) / 2
+                cy = (box[1] + box[3]) / 2
+
+                region_id = None
+                for r in regions:
+                    if r['x'] <= cx <= r['x']+r['w'] and r['y'] <= cy <= r['y']+r['h']:
+                        region_id = r['id']
+                        break
+
+                detections.append(
+                    Detection(
+                        x1=int(box[0]), y1=int(box[1]),
+                        x2=int(box[2]), y2=int(box[3]),
+                        cls=self.model_meta.class_names[cls],
+                        track_id=tid,
+                        region_id=region_id
+                    )
+                )
+        else:
+            for region in regions:
+                rx1, ry1 = int(region['x']), int(region['y'])
+                rx2 = rx1 + int(region['w'])
+                ry2 = ry1 + int(region['h'])
+
+                regionFrame = frame[ry1:ry2, rx1:rx2]
+                if regionFrame.size == 0:
+                    continue
+
+                results = self.model.track(
+                    regionFrame,
+                    persist=True,
+                    classes=[self.model_meta.classes[c] for c in self.model_meta.classes],
+                    conf= self.model_meta.conf,
+                    verbose=False
+                )
+                boxes = results[0].boxes
+                if boxes is None or boxes.id is None:
+                    continue
+                for box, cls, tid in zip(
+                    boxes.xyxy.cpu().numpy(),
+                    boxes.cls.cpu().numpy().astype(int),
+                    boxes.id.cpu().numpy().astype(int)
+                ):
+                    bx1, by1, bx2, by2 = map(int, box)
+
+                    detections.append(
+                        Detection(
+                            x1=bx1+rx1, y1=by1+ry1,
+                            x2=bx2+rx1, y2=by2+ry1,
+                            cls=self.class_names[cls],
+                            track_id=tid,
+                            region_id=region['id']
+                        )
+                    )
+        
+
+        # save frame to disk for debug
+        if self.model_meta.dev:
+            for region in regions:
+                cv2.imwrite(f"uploaded_videos/debug_region_{region['id']}.jpg", regionFrame)
+                cv2.imwrite(f"uploaded_videos/debug_fullframe_{region['id']}.jpg", results[0].plot())
+
+        
         return detections
     
 class TrackVehicleCounter(VehicleCounter):

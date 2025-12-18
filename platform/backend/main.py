@@ -61,7 +61,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 msg = json.loads(data)
 
                 if msg["type"] == "config":
-                    ok_model = processor.load_model(msg.get("model_size","s"), msg.get("custom_weights"))
+                    ok_model = processor.load_model(msg.get("modelTarget","yolo11s"), msg.get("custom_weights"))
                     if not ok_model:
                         await websocket.send_json({"type":"error","message":"model load failed"})
                         continue
@@ -126,6 +126,7 @@ async def health():
         "model_loaded": processor.model is not None,
         "source_active": processor.cap is not None and processor.cap.isOpened()
     }
+    
 # Include additional routes from app_router
 app.include_router(router)
 

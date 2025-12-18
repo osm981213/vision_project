@@ -15,6 +15,9 @@ class ModelMeta:
     classes: Dict[str, int] = field(default_factory=dict)
     type: str = "builtin"
     default: bool = False
+    conf: float = 0.25
+    dev : bool = False
+    mode : str = "track"
 
     def exists(self) -> bool:
         return Path(self.file).exists()
