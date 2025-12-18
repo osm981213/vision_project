@@ -406,12 +406,16 @@ class TrackInference:
         detections = []
         results = None
         regionFrame = None
+        classKeys = self.model_meta.classes.keys()
+        for k in classKeys:
+            classKeys = int(k)
+            break
 
         if not regions:
             results = self.model.track(
                 frame,
                 persist=True,
-                classes=[self.model_meta.classes[c] for c in self.model_meta.classes],
+                classes=[classKeys],
                 conf= self.model_meta.conf,
                 verbose=False
             )
@@ -437,7 +441,7 @@ class TrackInference:
                     Detection(
                         x1=int(box[0]), y1=int(box[1]),
                         x2=int(box[2]), y2=int(box[3]),
-                        cls=self.model_meta.class_names[cls],
+                        cls=self.model_meta.classes[cls],
                         track_id=tid,
                         region_id=region_id
                     )
@@ -455,7 +459,7 @@ class TrackInference:
                 results = self.model.track(
                     regionFrame,
                     persist=True,
-                    classes=[self.model_meta.classes[c] for c in self.model_meta.classes],
+                    classes=[classKeys],
                     conf= self.model_meta.conf,
                     verbose=False
                 )
@@ -473,7 +477,7 @@ class TrackInference:
                         Detection(
                             x1=bx1+rx1, y1=by1+ry1,
                             x2=bx2+rx1, y2=by2+ry1,
-                            cls=self.class_names[cls],
+                            cls=self.model_meta.classes[str(cls)],
                             track_id=tid,
                             region_id=region['id']
                         )

@@ -12,7 +12,7 @@ class ModelMeta:
     file: str
     display_name: str
     description: str = ""
-    classes: Dict[str, int] = field(default_factory=dict)
+    classes: Dict[str, str] = field(default_factory=dict)
     type: str = "builtin"
     default: bool = False
     conf: float = 0.25
