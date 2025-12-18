@@ -10,6 +10,10 @@ const CCTVTracker = () => {
   const [vehicleData, setVehicleData] = useState([]);
   const [showPopup, setShowPopup] = useState(null);
   const [regionStats, setRegionStats] = useState({});
+  const [showClassModal, setShowClassModal] = useState(false);
+  const [editingModel, setEditingModel] = useState(null);
+  const [modelClasses, setModelClasses] = useState({});
+  
   
   // Settings
   const [sourceType, setSourceType] = useState('rtsp');
@@ -18,11 +22,21 @@ const CCTVTracker = () => {
   const [httpUrl, setHttpUrl] = useState("");
   const [modelSize, setModelSize] = useState('s');
   const [customWeights, setCustomWeights] = useState('');
+  const [backendUrl, setBackendUrl] = useState('http://localhost:8000');
   
   const canvasRef = useRef(null);
   const drawStartRef = useRef(null);
   const wsRef = useRef(null);
   const imageRef = useRef(new Image());
+
+  // default class IDs
+  const defaultClasses = {
+    car: 2,
+    motorcycle: 3,
+    bus: 5,
+    truck: 7
+  };
+
 
   // WebSocket connection to FastAPI backend
   useEffect(() => {
@@ -145,47 +159,6 @@ const CCTVTracker = () => {
       // final swap
       ctx.drawImage(offscreen, 0, 0);
       
-      // // Draw detections
-      // detections.forEach(det => {
-      //   const color = {
-      //     'car': '#00ff00',
-      //     'bus': '#ff0000',
-      //     'truck': '#ff6b00',
-      //     'motorcycle': '#00d4ff'
-      //   }[det.class] || '#ffffff';
-
-      //   // update for scaled boxes
-      //   const x = det.x * scaleX;
-      //   const y = det.y * scaleY;
-      //   const w = det.w * scaleX;
-      //   const h = det.h * scaleY;
-        
-      //   ctx.strokeStyle = color;
-      //   ctx.lineWidth = 2;
-      //   ctx.strokeRect(det.x, det.y, det.w, det.h);
-      //   ctx.fillStyle = color;
-      //   ctx.font = '12px Arial';
-      //   ctx.fillText(`${det.class} #${det.track_id}`, det.x, det.y - 5);
-      // });
-      
-      // // Draw regions
-      // regions.forEach((region, idx) => {
-      //   ctx.strokeStyle = '#ffff00';
-      //   ctx.lineWidth = 3;
-      //   ctx.strokeRect(region.x * scaleX, region.y * scaleY, region.w * scaleX, region.h * scaleY);
-      //   ctx.fillStyle = '#ffff00';
-      //   ctx.font = '14px Arial';
-      //   ctx.fillText(`Region ${idx + 1}`, region.x + 5, region.y + 20);
-      // });
-      
-      // // Draw current drawing rect
-      // if (currentRect) {
-      //   ctx.strokeStyle = '#ff00ff';
-      //   ctx.lineWidth = 2;
-      //   ctx.setLineDash([5, 5]);
-      //   ctx.strokeRect(currentRect.x, currentRect.y, currentRect.w, currentRect.h);
-      //   ctx.setLineDash([]);
-      // }
     };
     img.src = `data:image/jpeg;base64,${frameData}`;
   };
@@ -282,7 +255,7 @@ const CCTVTracker = () => {
     const form = new FormData();
     form.append("file", file);
 
-    const res = await fetch("http://localhost:8000/upload_video", {
+    const res = await fetch(backendUrl +"/upload_video", {
       method: "POST",
       body: form,
     });
@@ -318,6 +291,18 @@ const CCTVTracker = () => {
 
   return (
     <div className="w-screen h-screen bg-gray-900 text-white p-4 overflow-hidden">
+      {/* header + url route */}
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <Camera className="w-6 h-6" />
+          CCTV Tracker Dashboard
+        </h1>
+        <div className="text-sm text-gray-400">
+          Home / CCTV Tracker
+        </div>
+      </div>
+      
+      
       <div className="grid grid-cols-2 grid-rows-2 gap-4 w-full h-full">
 
         {/* 1. CCTV Feed (Top Left) */}
@@ -349,19 +334,6 @@ const CCTVTracker = () => {
               onMouseLeave={handleMouseUp}
               />
             </div>
-          {/* <div className="flex-1 relative">
-            
-
-            <canvas
-              ref={canvasRef}
-              className="w-full h-auto bg-black rounded cursor-crosshair"
-            //   className="w-full h-full object-contain bg-black rounded cursor-crosshair"
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-            />
-          </div> */}
           
           <div className="mt-2 text-sm text-gray-400">
             {regions.length === 0 
@@ -635,12 +607,29 @@ const CCTVTracker = () => {
             <div>
               <label className="block text-sm font-medium mb-2">⚙️ Custom Weights (Optional)</label>
               <input
-                type="text"
-                value={customWeights}
-                onChange={(e) => setCustomWeights(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
-                placeholder="Leave empty for pre-trained weights"
+                type="file"
+                accept=".pt"
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+
+                  const form = new FormData();
+                  form.append("file", file);
+                  form.append("classes", JSON.stringify(modelClasses));
+
+
+                  const res = await fetch(backendUrl + "/upload_model", {
+                    method: "POST",
+                    body: form
+                  });
+
+                  const data = await res.json();
+
+                  // 업로드 후 모델 목록 다시 불러오기
+                  setSelectedModel(data.path);
+                }}
               />
+
               <div className="text-xs text-gray-400 mt-1">
                 Path to .pt file or leave empty for default
               </div>
@@ -665,10 +654,6 @@ const CCTVTracker = () => {
                 <span className="text-gray-400">Update Interval:</span>
                 <span className="font-medium">1 minute</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Resolution:</span>
-                <span className="font-medium">1920x1080</span>
-              </div>
             </div>
             
             <button 
@@ -685,6 +670,53 @@ const CCTVTracker = () => {
           </div>
         </div>
       </div>
+      {showClassModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-[500px]">
+            <h3 className="text-lg font-bold mb-4">
+              Configure Detection Classes
+            </h3>
+
+            {Object.entries(modelClasses).map(([name, id]) => (
+              <div key={name} className="flex gap-2 mb-2">
+                <input
+                  value={name}
+                  disabled
+                  className="flex-1 px-2 py-1 bg-gray-700 rounded"
+                />
+                <input
+                  type="number"
+                  value={id}
+                  onChange={(e) =>
+                    setModelClasses(prev => ({
+                      ...prev,
+                      [name]: Number(e.target.value)
+                    }))
+                  }
+                  className="w-20 px-2 py-1 bg-gray-700 rounded"
+                />
+              </div>
+            ))}
+
+            <button
+              className="mt-4 w-full bg-blue-600 py-2 rounded"
+              onClick={async () => {
+                await fetch(
+                  `${backendUrl}/models/${editingModel.id}/classes`,
+                  {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(modelClasses)
+                  }
+                );
+                setShowClassModal(false);
+              }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Region Detail Popup */}
       {showPopup && (

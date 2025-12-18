@@ -19,6 +19,7 @@ BASE_MODELS = [
         "file": "model/yolo11n.pt",
         "display_name": "YOLO11 Nano (Fast)",
         "description": "Fastest model, low latency",
+        "classes": [2, 3, 5, 7],
         "type": "builtin",
         "default": False
     },
@@ -27,6 +28,7 @@ BASE_MODELS = [
         "file": "model/yolo11s.pt",
         "display_name": "YOLO11 Small (Balanced)",
         "description": "Balanced speed and accuracy",
+        "classes": [2, 3, 5, 7],
         "type": "builtin",
         "default": True
     }
@@ -85,7 +87,7 @@ def init_default_models():
         if base["id"] in existing_ids:
             continue
 
-        ckpt_path = ensure_base_model(base["yolo_name"])
+        ckpt_path = ensure_base_model(base["file"])
         if not ckpt_path:
             continue
 
@@ -94,6 +96,7 @@ def init_default_models():
             file=str(ckpt_path),
             display_name=base["display_name"],
             description=base["description"],
+            classes=base["classes"],
             type="builtin",
             default=base["default"]
         )

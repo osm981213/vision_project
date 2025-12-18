@@ -5,6 +5,12 @@
       "file": "model/yolo11s.pt",
       "display_name": "YOLO11 Small (Balanced)",
       "description": "Fast and stable model for general CCTV usage",
+      "classes": {
+        "car": 2,
+        "motorcycle": 3,
+        "bus": 5,
+        "truck": 7
+      },
       "type": "builtin",
       "default": true
     },
@@ -13,6 +19,12 @@
       "file": "model/yolo11m.pt",
       "display_name": "YOLO11 Medium (Accurate)",
       "description": "Higher accuracy, slower inference",
+      "classes": {
+        "car": 2,
+        "motorcycle": 3,
+        "bus": 5,
+        "truck": 7
+      },
       "type": "builtin"
     }
   ]

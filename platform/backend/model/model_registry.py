@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict
 from pathlib import Path
 
 # 모델 메타데이터 클래스
@@ -11,6 +12,7 @@ class ModelMeta:
     file: str
     display_name: str
     description: str = ""
+    classes: Dict[str, int] = field(default_factory=dict)
     type: str = "builtin"
     default: bool = False
 

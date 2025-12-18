@@ -13,6 +13,7 @@ import shutil
 import os
 from uuid import uuid4
 from pathlib import Path
+from app_router import router
 
 app = FastAPI()
 counter = VehicleCounter()
@@ -125,67 +126,8 @@ async def health():
         "model_loaded": processor.model is not None,
         "source_active": processor.cap is not None and processor.cap.isOpened()
     }
-
-# 영상 업로드
-@app.post("/upload_video")
-async def upload_video(file: UploadFile = File(...)):
-    ext = Path(file.filename).suffix.lower() or ".mp4"
-    video_id = f"{uuid4().hex}{ext}"
-    save_path = UPLOAD_DIR / video_id
-
-    with save_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    return {"status": "success", "video_id": video_id}
-
-# 모델 리스트 호출
-@app.get("/models")
-async def get_models():
-    models = load_model_registry()
-
-    return {
-        "models": [
-            {
-                "id": m.id,
-                "display_name": m.display_name,
-                "description": m.description,
-                "path": m.file,
-                "default": m.default
-            }
-            for m in models
-        ]
-    }
-
-
-# 모델 업로드
-@app.post("/upload_model")
-async def upload_model(
-    file: UploadFile = File(...),
-    display_name: str = "Custom YOLO Model",
-    description: str = ""
-):
-    if not file.filename.endswith(".pt"):
-        return {"error": "Only .pt files allowed"}
-
-    model_id = uuid4().hex[:8]
-    filename = f"{model_id}_{file.filename}"
-    save_path = CUSTOM_MODEL_DIR / filename
-
-    with save_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    models = load_model_registry()
-    models.append(ModelMeta(
-        id=model_id,
-        file=str(save_path),
-        display_name=display_name,
-        description=description,
-        type="custom"
-    ))
-    save_model_registry(models)
-
-    return {"status": "success"}
-
+# Include additional routes from app_router
+app.include_router(router)
 
 
 # --------------------------
