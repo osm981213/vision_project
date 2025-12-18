@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux';
 import { Camera, Play, Pause, RotateCcw, X, Settings, Upload, Video, ChevronsDown, ChevronsUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-const CalibratedSpeed = () => {
+const TOFSpeed = () => {
     const [chartData, setChartData] = useState({});
     const [chartOptions, setChartOptions] = useState({});
     const [isHeaderOpen, setIsHeaderOpen] = useState(true);
@@ -21,26 +21,26 @@ const CalibratedSpeed = () => {
               {/* Header Toggle */}
               {isHeaderOpen ? (
                 <div className="mb-3 border-b border-gray-700 pb-2">
-                    <h1 className="text-2xl font-bold flex items-center gap-2">
+                  <h1 className="text-2xl font-bold flex items-center gap-2">
                     <Camera className="w-6 h-6" />
                     CCTV Tracker Dashboard
-                    </h1>
-                    <div className='flex items-center gap-1 mt-1'>
-                        <Link to="/" className="text-sm text-gray-400">
-                            CCTV Tracker
-                        </Link>
-                        /
-                        <Link to="/calibrated-speed" className="text-sm ">
-                            CalibratedSpeed
-                        </Link>
-                        /
-                        <Link to="/tof-speed" className="text-sm text-gray-400">
-                            TOFSpeed
-                        </Link>
-                    </div>
-                    <div className="absolute top-4 right-4 cursor-pointer" onClick={toggleHeader}>
+                  </h1>
+                  <div className='flex items-center gap-1 mt-1'>
+                    <Link to="/" className="text-sm text-gray-400">
+                      CCTV Tracker
+                    </Link>
+                    /
+                    <Link to="/calibrated-speed" className="text-sm text-gray-400">
+                      CalibratedSpeed
+                    </Link>
+                    /
+                    <Link to="/tof-speed" className="text-sm">
+                      TOFSpeed
+                    </Link>
+                  </div>
+                  <div className="absolute top-4 right-4 cursor-pointer" onClick={toggleHeader}>
                     <ChevronsUp className="w-5 h-5 text-gray-400" />
-                    </div>
+                  </div>
                 </div>
                 ) : (
                 <div className="absolute top-4 right-4 cursor-pointer" onClick={toggleHeader}>
@@ -70,4 +70,4 @@ const CalibratedSpeed = () => {
     );
 };
 
-export default CalibratedSpeed;
+export default TOFSpeed;
