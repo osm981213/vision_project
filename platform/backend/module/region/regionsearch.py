@@ -5,13 +5,14 @@ import time
 import cv2
 from ultralytics import YOLO
 
-from platform.backend.module.region.domain import region
+from .domain.region import Region
 from .domain.detection import Detection
 from collections import defaultdict
 
 from model.model_registry import ModelMeta
 
 from .vehiclecounter import VehicleCounter
+from ..utils.draw_boxes import plot_detections, draw_regions
 
 
 
@@ -23,28 +24,28 @@ class CCTVProcessor:
         return str(p)
     
     def __init__(self):
-        self.model = None
+        self.loadedModel = None
+        self.modelMeta = None
         self.cap = None
         self.regions = []
         self.running = False
         self.mode = "track"  # "detect" or "track"
-        self.modelclasses = [2,3,5,7]  # car, motorcycle, bus, truck
+        self.modelclasses = []
+        self.time_out = 30  # seconds
+        self.time_out_msg = "30초 동안 프레임이 수신되지 않아 종료되었습니다."
+        
         
         self.frame_queue = Queue(maxsize=2)
         self.result_queue = Queue(maxsize=2)
 
         self.inference_thread = None
 
-# --------------------------
-# Video Source and Model Management
-# model_size: 's', 'm', 'l', 'x' default 's'
-# --------------------------
     def load_model(self, modelTarget='yolo11s', custom_weights=None):
         try:
             if custom_weights and custom_weights.strip():
-                self.model = YOLO(f"model/{custom_weights}.pt")
+                self.loadedModel = YOLO(f"model/{custom_weights}.pt")
             else:
-                self.model = YOLO(f"model/{modelTarget}.pt")
+                self.loadedModel = YOLO(f"model/{modelTarget}.pt")
             print("Model loaded")
             return True
         except Exception as e:
@@ -85,8 +86,12 @@ class CCTVProcessor:
     # Inference Worker Thread
     # --------------------------
     def inference_worker(self, counter: VehicleCounter):
-        class_names = {2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck'}
+        class_names = self.modelMeta.classes
+        self.modelclasses = []
+        for k in class_names.keys():
+            self.modelclasses.append( int(k) )
         delay = 0
+        timewait = 0
         if self.cap is not None:
             delay = 1.0 / self.cap.get(cv2.CAP_PROP_FPS)  # ms 단위
             self.cap.get(cv2.CAP_PROP_FPS)
@@ -97,6 +102,13 @@ class CCTVProcessor:
                 time.sleep(0.01)
                 continue
             if self.frame_queue.empty():
+                # timeout 처리 30초 지나도 프레임이 안들어오면 out
+                timewait += 0.01
+                if timewait >= self.time_out:
+                    print(self.time_out_msg)
+                    self.running = False
+                    break
+                time.sleep(0.01)
                 continue
             startTime = time.time()
             frame = self.frame_queue.get()
@@ -130,14 +142,14 @@ class CCTVProcessor:
                     # region 단위로 추론
                     regionFrame = resized[y1:y2, x1:x2]
                     if self.mode == "track":
-                        results = self.model.track(
+                        results = self.loadedModel.track(
                             regionFrame,                # FIXED SIZE
                             persist=True,
                             classes= self.modelclasses,
                             verbose=False
                         )
                     else:
-                        results = self.model.predict(
+                        results = self.loadedModel.predict(
                             regionFrame,                # FIXED SIZE
                             classes= self.modelclasses,
                             verbose=False
@@ -168,7 +180,7 @@ class CCTVProcessor:
                             x2 = int(x2)
                             y2 = int(y2)
                             
-                            vehicle_class = class_names.get(cls, "unknown")
+                            vehicle_class = class_names.get( str(cls), "unknown")
 
                             color = {
                                 'car': (0, 255, 0),
@@ -198,14 +210,14 @@ class CCTVProcessor:
                 results = None
                 # 전체 프레임 단위로 추론 
                 if self.mode == "track":
-                    results = self.model.track(
+                    results = self.loadedModel.track(
                         resized,
                         persist=True,
                         classes=self.modelclasses,
                         verbose=False
                     )
                 else:
-                    results = self.model.predict(
+                    results = self.loadedModel.predict(
                         resized,
                         classes=self.modelclasses,
                         verbose=False
@@ -296,7 +308,96 @@ class CCTVProcessor:
                 print(f"[WARNING] Inference time {elapsed:.3f}s exceeds frame delay {delay:.3f}s, skipping {skip_count} frames")
                 for _ in range(skip_count):
                     self.cap.grab()   # 프레임 건너뛰기
+                    
+                    
+            
 
+    # --------------------------
+    # Inference Wroker Thread 추론 버전 2
+    # --------------------------
+    def inference_worker_classv(self, counter: VehicleCounter):
+        class_names = self.modelMeta.classes
+        self.modelclasses = []
+        for k in class_names.keys():
+            self.modelclasses.append( int(k) )
+        delay = 0
+        if self.cap is not None:
+            delay = 1.0 / self.cap.get(cv2.CAP_PROP_FPS)  # ms 단위
+            self.cap.get(cv2.CAP_PROP_FPS)
+            print("FPS:", self.cap.get(cv2.CAP_PROP_FPS))
+            print("Delay between frames (s):", delay)
+        while self.running:
+            if self.cap is None:
+                time.sleep(0.01)
+                continue
+            if self.frame_queue.empty():
+                continue
+            startTime = time.time()
+            frame = self.frame_queue.get()
+            resized_w = 640
+            resized_h = 360
+
+            # Resize to lower resolution for speed
+            resized = cv2.resize(frame, (resized_w, resized_h))
+            plotted_frame = resized.copy()
+            detections = []
+            inference_strategy = None
+            vehicle_counter = None
+            
+            
+            # 추론
+            if self.mode == "detect":
+                inference_strategy = PredictInference(self.loadedModel, self.modelMeta)
+                vehicle_counter = PredictVehicleCounter()
+                detections = inference_strategy.infer(resized, self.regions)
+                vehicle_counter.update(detections)
+            else:
+                inference_strategy = TrackInference(self.loadedModel, self.modelMeta)
+                vehicle_counter = TrackVehicleCounter()
+                detections = inference_strategy.infer(resized, self.regions)
+                vehicle_counter.update(detections)
+                
+            # 시각화
+            self.plot_detections(plotted_frame, detections)
+            draw_regions(plotted_frame, self.regions)
+            
+            # Encode frame to base64
+            _, buffer = cv2.imencode(".jpg", plotted_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            frame_base64 = base64.b64encode(buffer).decode("utf-8")
+            # Push result to queue
+            if self.result_queue.full():
+                self.result_queue.get()
+            self.result_queue.put({
+                "frame": frame_base64,
+                "detections": detections,
+                "orig_size": (orig_w, orig_h),
+                "resized_size": (resized_w, resized_h)
+            })
+            
+            endTime = time.time()
+            elapsed = endTime - startTime
+            if elapsed > delay * 2: # 2배 이상 걸리면 본 프레임을 따라가기 위해 스킵
+                skip_count = int(elapsed / delay) - 1
+                skip_count = max(skip_count, 1)  # 최소 1개는 스킵
+                print(f"[WARNING] Inference time {elapsed:.3f}s exceeds frame delay {delay:.3f}s, skipping {skip_count} frames")
+                for _ in range(skip_count):
+                    self.cap.grab()   # 프레임 건너뛰기
+                    
+    # --------------------------
+    # Inference Thread Starter
+    # --------------------------
+    def start_inference_thread_classv(self, counter: VehicleCounter):
+        if self.inference_thread and self.inference_thread.is_alive():
+            return
+        
+        self.inference_thread = threading.Thread(
+            target=self.inference_worker_classv,
+            args=(counter,),
+            daemon=True
+        )        
+        self.inference_thread.start()
+        print("Inference thread started")
+        
     def start_inference_thread(self, counter: VehicleCounter):
         if self.inference_thread and self.inference_thread.is_alive():
             return
@@ -333,6 +434,8 @@ class CCTVProcessor:
                 color,
                 1
             )
+    def setModelMeta(self, model_meta: ModelMeta):
+        self.modelMeta = model_meta
 
         
 
@@ -340,8 +443,8 @@ class CCTVProcessor:
 # Predict Inference Strategy
 # --------------------------
 class PredictInference:
-    def __init__(self, model, model_meta: ModelMeta):
-        self.model = model
+    def __init__(self, loadedModel, model_meta: ModelMeta):
+        self.loadedModel = loadedModel
         self.model_meta = model_meta
         
     def infer(self, frame, regions):
@@ -365,7 +468,7 @@ class PredictInference:
             if crop.size == 0:
                 continue
 
-            results = self.model.predict(crop, classes=[2,3,5,7], verbose=False)
+            results = self.loadedModel.predict(crop, classes=[2,3,5,7], verbose=False)
             boxes = results[0].boxes
             if not boxes:
                 continue
@@ -398,8 +501,8 @@ class PredictVehicleCounter(VehicleCounter):
 # Track Inference Strategy
 # --------------------------
 class TrackInference:
-    def __init__(self, model, model_meta: ModelMeta):
-        self.model = model
+    def __init__(self, loadedModel, model_meta: ModelMeta):
+        self.loadedModel = loadedModel
         self.model_meta = model_meta
 
     def infer(self, frame, regions):
@@ -412,7 +515,7 @@ class TrackInference:
             break
 
         if not regions:
-            results = self.model.track(
+            results = self.loadedModel.track(
                 frame,
                 persist=True,
                 classes=[classKeys],
@@ -456,7 +559,7 @@ class TrackInference:
                 if regionFrame.size == 0:
                     continue
 
-                results = self.model.track(
+                results = self.loadedModel.track(
                     regionFrame,
                     persist=True,
                     classes=[classKeys],
@@ -508,3 +611,4 @@ class TrackVehicleCounter(VehicleCounter):
 
     def get_stats(self):
         return self.counts
+

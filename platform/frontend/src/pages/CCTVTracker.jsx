@@ -15,8 +15,8 @@ const CCTVTracker = () => {
   const [editingModel, setEditingModel] = useState(null);
   const [showModelSettings, setShowModelSettings] = useState(false);
   const [models, setModels] = useState([
-    {id: 'yolo11n', display_name: 'YOLO11n (Nano - Fastest)', description: 'Fastest model, low latency', conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}}, 
-    {id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}}
+    {id: 'yolo11n', display_name: 'YOLO11n (Nano - Fastest)', description: 'Fastest model, low latency', conf: 0.3, dev: false, mode: "track", classes: {"2": "car", "3": "motorcycle", "5": "bus", "7": "truck"}}, 
+    {id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {"2": "car", "3": "motorcycle", "5": "bus", "7": "truck"}}
   ]);
   
   // Settings
@@ -36,8 +36,8 @@ const CCTVTracker = () => {
   const [isHeaderOpen, setIsHeaderOpen] = useState(true);
 
   // defaults
-  const defaultClasses = {car: 2, motorcycle: 3, bus: 5, truck: 7 };
-  const defaultModelParams = {conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}}; // State for model parameters
+  const defaultClasses = {"2": "car", "3": "motorcycle", "5": "bus", "7": "truck"};
+  const defaultModelParams = {conf: 0.3, dev: false, mode: "track", classes: {"2": "car", "3": "motorcycle", "5": "bus", "7": "truck"}}; // State for model parameters
 
   // WebSocket connection to FastAPI backend
   useEffect(() => {
@@ -55,6 +55,16 @@ const CCTVTracker = () => {
           updateVehicleCounts(data.counts);
         } else if (data.type === 'region_stats') {
           setRegionStats(data.stats);
+        } else if (data.type === 'timeout') {
+          // Handle timeout message
+          setIsPlaying(false);
+          // canvas에 메시지 표시
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = 'red';
+          ctx.font = '20px Arial';
+          ctx.fillText('Inference stopped: ' + data.message, 10, 50);
         }
       };
       
@@ -704,7 +714,7 @@ const CCTVTracker = () => {
               <div className="font-medium text-yellow-400 mb-2">ℹ️ Current Settings</div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Tracking Classes:</span>
-                <span className="font-medium">{Object.keys(modelParams.classes).join(', ')}</span>
+                <span className="font-medium">{Object.values(modelParams.classes).join(', ')}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Mode:</span>
@@ -755,7 +765,7 @@ const CCTVTracker = () => {
                 <label className="block text-sm font-medium mb-2">Model id</label>
                 <input
                   type="text"
-                  value={modelTarget}
+                  value={modelTarget.id}
                   onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                 />
@@ -766,7 +776,7 @@ const CCTVTracker = () => {
                 <label className="block text-sm font-medium mb-2">Model Display N</label>
                 <input
                   type="text"
-                  value={modelTarget}
+                  value={modelTarget.display_name}
                   onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                 />
@@ -777,7 +787,7 @@ const CCTVTracker = () => {
                 <label className="block text-sm font-medium mb-2">Model Description</label>
                 <input
                   type="text"
-                  value={modelTarget}
+                  value={modelTarget.description}
                   onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                 />
@@ -790,7 +800,7 @@ const CCTVTracker = () => {
                 <input
                   type="number"
                   step="0.01"
-                  defaultValue={defaultModelParams.conf}
+                  value={modelParams.conf}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                   onChange={(e) => {
                     // handle change
@@ -802,7 +812,7 @@ const CCTVTracker = () => {
                 <input
                   type="checkbox"
                   id="use-dev"
-                  defaultChecked={defaultModelParams.dev}
+                  checked={modelParams.dev}
                   onChange={(e) => {
                     // handle change
                     setModelParams({...modelParams, dev: e.target.checked});
@@ -813,7 +823,7 @@ const CCTVTracker = () => {
               <div>
                 <label className="block text-sm font-medium mb-2">Mode</label>
                 <select
-                  defaultValue={defaultModelParams.mode}
+                  value={modelParams.mode}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                   onChange={(e) => {
                     // handle change
@@ -821,13 +831,13 @@ const CCTVTracker = () => {
                   }}
                 >
                   <option value="track">Track</option>
-                  <option value="detect">Detect Only</option>
+                  <option value="predict">Predict</option>
                 </select>
               </div>
               {/* classes configuration */}
               <h2 className="text-md font-bold mt-4 mb-2">🎯 Detection Classes</h2>
-              {Object.entries(modelParams.classes).map(([name, id]) => (
-                <div key={name} className="flex gap-2 mb-2">
+              {Object.entries(modelParams.classes).map(([id, name]) => (
+                <div key={id} className="flex gap-2 mb-2">
                   <input
                     value={name}
                     className="flex-1 px-2 py-1 bg-gray-700 rounded"
@@ -840,7 +850,7 @@ const CCTVTracker = () => {
                         ...prev,
                         classes: {
                           ...prev.classes,
-                          [name]: Number(e.target.value)
+                          [String(e.target.value)]: name
                         }
                       }))
                     }
@@ -851,7 +861,7 @@ const CCTVTracker = () => {
                     onClick={() => {
                       setModelParams(prev => {
                         const updatedClasses = { ...prev.classes };
-                        delete updatedClasses[name];
+                        delete updatedClasses[String(id)];
                         return {
                           ...prev,
                           classes: updatedClasses
