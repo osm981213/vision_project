@@ -1,0 +1,39 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# COCO8 dataset (first 8 images from COCO train2017) by Ultralytics
+# Documentation: https://docs.ultralytics.com/datasets/detect/coco8/
+# Example usage: yolo train data=coco8.yaml
+# parent
+# ├── ultralytics
+# └── datasets
+#     └── coco8 ← downloads here (1 MB)
+
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+# path: data_set # dataset root dir
+# train: images/train # train images (relative to 'path') 4 images
+# val: images/val # val images (relative to 'path') 4 images
+# test: images/test # test images (optional)
+
+# 데이터셋은 https://universe.roboflow.com/ai-its-korea-6aly8/it-korea/dataset/2 v2를 다운받아서 사용함
+
+# Classes
+nc : 13
+names: # 0 ~ 9번 인덱스를 전부 Truck 으로 통합 처리함 메인코드에서 (이유 : 너무 세세하게 나눠놓아서)
+  0: 2 Axle Truck - L
+  1: 2 Axle Truck - S
+  2: 3 Axle Truck
+  3: 4 Axle 1 Unit Truck
+  4: 5 Axle 1 Unit Truck
+  5: 5 Axle 2 Unit Full Trailer
+  6: 5 Axle 2 Unit Semi Trailer
+  7: 6 Axle 2 Unit Full Trailer
+  8: 6 Axle 2 Unit Semi Trailer
+  9: 7 Axle 2 Unit Semi Trailer
+  10: Bus
+  11: Car
+  12: Motorcycle
+
+  
+
+# Download script/URL (optional)
+download: https://github.com/ultralytics/assets/releases/download/v0.0.0/coco8.zip
