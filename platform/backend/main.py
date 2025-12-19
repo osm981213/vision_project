@@ -102,6 +102,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     "detections": result["detections"],
                     "stats": counter.get_region_stats()
                 })
+                
+            # TIMEOUT for no frames received
+            if not processor.running:
+                await websocket.send_json({"type":"timeout","message":"30초 동안 프레임이 수신되지 않아 종료되었습니다."})
 
             await asyncio.sleep(0.03)
 
