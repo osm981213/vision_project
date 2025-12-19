@@ -1,0 +1,38 @@
+{
+  "models": [
+    {
+      "id": "yolo11n",
+      "file": "model\\yolo11n.pt",
+      "display_name": "YOLO11n (Nano - Fastest)",
+      "description": "Fastest model, low latency",
+      "classes": {
+        "2" : "car",
+        "5" : "bus",
+        "7" : "truck",
+        "3" : "motorcycle"
+      },
+      "type": "builtin",
+      "default": false,
+      "conf": 0.25,
+      "dev": false,
+      "mode": "track"
+    },
+    {
+      "id": "yolo11s",
+      "file": "model\\yolo11s.pt",
+      "display_name": "YOLO11s (Small - Balanced) ⭐",
+      "description": "Balanced speed and accuracy",
+      "classes": {
+        "2" : "car",
+        "5" : "bus",
+        "7" : "truck",
+        "3" : "motorcycle"
+      },
+      "type": "builtin",
+      "default": true,
+      "conf": 0.25,
+      "dev": false,
+      "mode": "track"
+    }
+  ]
+}
