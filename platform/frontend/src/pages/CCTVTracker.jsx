@@ -24,10 +24,12 @@ const CCTVTracker = () => {
   const [rtspUrl, setRtspUrl] = useState('rtsp://admin:password@192.168.1.100:554/stream');
   const [videoFile, setVideoFile] = useState(null);
   const [httpUrl, setHttpUrl] = useState("");
-  const [modelTarget, setModelTarget] = useState({id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}});
+  // model original target
+  const [modelTarget, setModelTarget] = useState({id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {"2": "car", "3": "motorcycle", "5": "bus", "7": "truck"}});
   const [customWeights, setCustomWeights] = useState('');
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000');
-  const [modelParams, setModelParams] = useState({id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {car: 2, motorcycle: 3, bus: 5, truck: 7}});  
+  // model parameters to edit and send to backend
+  const [modelParams, setModelParams] = useState({id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {"2": "car", "3": "motorcycle", "5": "bus", "7": "truck"}});  
   
   const canvasRef = useRef(null);
   const drawStartRef = useRef(null);
@@ -48,24 +50,65 @@ const CCTVTracker = () => {
       wsRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         
+        // {
+//     "type": "frame",
+//     "frame": "/9j...", // base64-encoded JPEG image
+//     "resized_size": [
+//         640,
+//         360
+//     ],
+//     "orig_size": [
+//         720,
+//         480
+//     ],
+//     "detections": {
+//         "car": 21,
+//         "bus": 2,
+//         "truck": 6,
+//         "motorcycle": 0
+//     },
+//     "stats": {
+//         "global": {
+//             "car": 10,
+//             "bus": 1,
+//             "truck": 4,
+//             "motorcycle": 0
+//         },
+//         "1766124044336": {
+//             "car": 5,
+//             "bus": 1,
+//             "truck": 1,
+//             "motorcycle": 0
+//         },
+//         "1766124181901": {
+//             "car": 6,
+//             "bus": 0,
+//             "truck": 1,
+//             "motorcycle": 0
+//         }
+//     }
+// }
         if (data.type === 'frame') {
           console.log(data);
           drawFrame(data.frame, data.detections, data.resized_size, data.orig_size);
-        } else if (data.type === 'counts') {
-          updateVehicleCounts(data.counts);
-        } else if (data.type === 'region_stats') {
           setRegionStats(data.stats);
-        } else if (data.type === 'timeout') {
-          // Handle timeout message
-          setIsPlaying(false);
-          // canvas에 메시지 표시
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext('2d');
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.fillStyle = 'red';
-          ctx.font = '20px Arial';
-          ctx.fillText('Inference stopped: ' + data.message, 10, 50);
-        }
+          updateVehicleCounts(data.detections);
+        } 
+        // else if (data.type === 'counts') {
+        //   updateVehicleCounts(data.counts);
+        // } else if (data.type === 'region_stats') {
+        //   setRegionStats(data.stats);
+        // } else if (data.type === 'timeout') {
+        //   // Handle timeout message
+        //   setIsPlaying(false);
+        //   // canvas에 메시지 표시
+        //   const canvas = canvasRef.current;
+        //   const ctx = canvas.getContext('2d');
+        //   ctx.clearRect(0, 0, canvas.width, canvas.height);
+        //   ctx.fillStyle = 'red';
+        //   ctx.font = '20px Arial';
+        //   ctx.fillText('Inference stopped: ' + data.message, 10, 50);
+        // }
       };
       
       wsRef.current.onopen = () => {
@@ -149,10 +192,17 @@ const CCTVTracker = () => {
   };
 
   // load models from backend
-  const loadModels = async () => {
+  // 패러미터로 모델 목록을 받아와서 상태 업데이트
+  const loadModels = async (modelid = null) => {
     const res = await fetch(backendUrl + "/models");
     const data = await res.json();
-    console.log(data);
+    if(modelid){
+      const targetModel = data.models.find(m => m.id === modelid);
+      setModelTarget(targetModel);
+      setModelParams(targetModel);
+      console.log(targetModel);
+    }
+    console.log("Loaded models:", data.models, "currentTargetModel:", modelTarget);
     setModels(data.models);
   };
 
@@ -298,14 +348,37 @@ const CCTVTracker = () => {
     setVideoFile(videoId)
   };
 
-  const uploadModelSettingsToServer = async (file) => { 
+  const uploadModelSettingsToServer = async () => { 
     const form = new FormData();
-    form.append("model_params", JSON.stringify(modelParams));
-    const res = await fetch(backendUrl + "/upload_model", {
-      method: "POST",
-      body: form
-    });
+    form.append("model_id", modelTarget.id);
+    const params = {
+      conf: modelParams.conf,
+      dev: modelParams.dev,
+      mode: modelParams.mode,
+      classes: modelParams.classes,
+      display_name: modelParams.display_name,
+      description: modelParams.description
+    };
+    form.append("model_data", JSON.stringify(params));
+
+    console.log("Uploading model settings:", modelTarget.id, params);
+
+    const res = await fetch(
+      backendUrl + "/models/" + modelTarget.id,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(params)
+      }
+    );
     const data = await res.json();
+    if (!res.ok) throw new Error("Model update failed");
+    
+    // 모델 목록 다시 불러오기
+    await loadModels(modelTarget.id);
+
     return data.path;
   };
 
@@ -315,6 +388,16 @@ const CCTVTracker = () => {
 
   const toggleHeader = () => {
     setIsHeaderOpen((prev) => !prev);
+  };
+
+  const updateModelSettings = async () => {
+    try {
+      const modelPath = await uploadModelSettingsToServer();
+      console.log("Model settings uploaded to:", modelPath);
+      setShowModelSettings(false);
+    } catch (error) {
+      console.error("Error uploading model settings:", error);
+    }
   };
 
   return (
@@ -417,10 +500,12 @@ const CCTVTracker = () => {
             )}
           
           <div className="grid grid-cols-2 gap-3 flex-1">
+            {/* 기본적으론 car, bus, truck, motorcycle <-아이콘 있음 그 외는 className */}
+            
             {[0, 1, 2, 3].map(idx => {
               const region = regions[idx];
               const stats = regionStats[region?.id] || { car: 0, bus: 0, truck: 0, motorcycle: 0 };
-              
+              console.log("Region stats:", region?.id, stats, regionStats);
               return (
                 <div
                   key={idx}
@@ -641,12 +726,15 @@ const CCTVTracker = () => {
               {/* 모델 불러오기 성공 */}
               {models && models.length > 0 && (
                 <select
-                  value={modelTarget}
-                  onChange={(e) => setModelTarget(models.find(model => model.name === e.target.value))}
+                  value={modelTarget.id}
+                  onChange={(e) => {
+                    setModelParams(models.find(model => model.id === e.target.value));
+                    setModelTarget(models.find(model => model.id === e.target.value))
+                  }}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                 >
                   {models.map((model) => (
-                    <option key={model.name} value={model.name}>
+                    <option key={model.id} value={model.id}>
                       {model.display_name} {model.dev ? '(Dev)' : ''}
                     </option>
                   ))}
@@ -656,7 +744,7 @@ const CCTVTracker = () => {
               {(!models || models.length === 0) && (
                 <select
                   value={modelTarget}
-                  onChange={(e) => setModelTarget(models.find(model => model.name === e.target.value))}
+                  onChange={(e) => setModelTarget(models.find(model => model.id === e.target.value))}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
                 >
                 <option value="yolo11n">YOLO11n (Nano - Fastest)</option>
@@ -688,8 +776,11 @@ const CCTVTracker = () => {
 
                   // 업로드 후 모델 목록 다시 불러오기
                   // setModelTarget(data.path);
-                  loadModels();
-                  setModelTarget(data);
+                  loadModels(data.id);
+                  console.log("currentTargetModel:", modelTarget);
+
+                  // 파일 비우기
+                  e.target.value = null;
                 }}
               />
 
@@ -765,19 +856,19 @@ const CCTVTracker = () => {
                 <label className="block text-sm font-medium mb-2">Model id</label>
                 <input
                   type="text"
+                  disabled
                   value={modelTarget.id}
-                  onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                 />
               </div>
             </div>
             <div className="mb-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Model Display N</label>
+                <label className="block text-sm font-medium mb-2">Model Display Name</label>
                 <input
                   type="text"
-                  value={modelTarget.display_name}
-                  onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
+                  value={modelParams.display_name}
+                  onChange={(e) => setModelParams({...modelParams, display_name: e.target.value})}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                 />
               </div>
@@ -787,8 +878,8 @@ const CCTVTracker = () => {
                 <label className="block text-sm font-medium mb-2">Model Description</label>
                 <input
                   type="text"
-                  value={modelTarget.description}
-                  onChange={(e) => setModelParams({...modelParams, id: e.target.value})}
+                  value={modelParams.description}
+                  onChange={(e) => setModelParams({...modelParams, description: e.target.value})}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
                 />
               </div>
@@ -840,19 +931,35 @@ const CCTVTracker = () => {
                 <div key={id} className="flex gap-2 mb-2">
                   <input
                     value={name}
+                    onChange={(e) => 
+                      setModelParams(prev => ({
+                        ...prev,
+                        classes: {
+                          ...prev.classes,
+                          [id]: e.target.value
+                        }
+                      }))
+                    }
                     className="flex-1 px-2 py-1 bg-gray-700 rounded"
                   />
                   <input
                     type="number"
                     value={id}
                     onChange={(e) =>
-                      setModelParams(prev => ({
-                        ...prev,
-                        classes: {
-                          ...prev.classes,
-                          [String(e.target.value)]: name
-                        }
-                      }))
+                      setModelParams(prev => {
+                        const updatedClasses = { ...prev.classes };
+
+                        // 🔥 기존 id 삭제
+                        delete updatedClasses[id];
+
+                        // ✅ 새 id로 추가
+                        updatedClasses[e.target.value] = name;
+
+                        return {
+                          ...prev,
+                          classes: updatedClasses
+                        };
+                      })
                     }
                     className="w-20 px-2 py-1 bg-gray-700 rounded"
                   />
@@ -876,6 +983,10 @@ const CCTVTracker = () => {
               {/* Add new class */}
               <button
                 onClick={() => {
+                  if (Object.keys(modelParams.classes).length >= 4) {
+                    alert("Maximum 4 classes allowed");
+                    return;
+                  }
                   const newClassName = prompt("Enter new class name:");
                   const newClassId = prompt("Enter new class ID (number):");
                   if (newClassName && newClassId) {
@@ -896,7 +1007,7 @@ const CCTVTracker = () => {
 
               <button
                 className="mt-4 w-full bg-blue-600 py-2 rounded"
-                onClick={() => setShowModelSettings(false)}
+                onClick={() => updateModelSettings()}
               >
                   Save Settings
               </button>

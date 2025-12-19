@@ -33,6 +33,7 @@ class CCTVProcessor:
         self.modelclasses = []
         self.time_out = 30  # seconds
         self.time_out_msg = "30초 동안 프레임이 수신되지 않아 종료되었습니다."
+        self.firstLoad = True
         
         
         self.frame_queue = Queue(maxsize=2)
@@ -102,14 +103,19 @@ class CCTVProcessor:
                 time.sleep(0.01)
                 continue
             if self.frame_queue.empty():
-                # timeout 처리 30초 지나도 프레임이 안들어오면 out
-                timewait += 0.01
-                if timewait >= self.time_out:
-                    print(self.time_out_msg)
-                    self.running = False
-                    break
-                time.sleep(0.01)
+                # # timeout 처리 30초 지나도 프레임이 안들어오면 out
+                # timewait += 0.01
+                # if timewait >= self.time_out:
+                #     print(self.time_out_msg)
+                #     self.running = False
+                #     break
+                # time.sleep(0.01)
                 continue
+            if self.frame_queue.full():
+                print("Frame queue full, skipping frame queue size:", self.frame_queue.qsize())
+                # emptying the queue to get the latest frame
+                self.frame_queue.get()
+                continue  # 최신 프레임만 유지 (이전 프레임 버림)
             startTime = time.time()
             frame = self.frame_queue.get()
             resized_w = 640
@@ -198,12 +204,13 @@ class CCTVProcessor:
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
                             # region counting
-                            cx = (x1 + x2) / 2
-                            cy = (y1 + y2) / 2
+                            counter.add_vehicle(region["id"], vehicle_class, track_id)
+                            # cx = (x1 + x2) / 2
+                            # cy = (y1 + y2) / 2
 
-                            if (region['x'] <= cx <= region['x'] + region['w'] and
-                                region['y'] <= cy <= region['y'] + region['h']):
-                                counter.add_vehicle(region["id"], vehicle_class, track_id)
+                            # if (region['x'] <= cx <= region['x'] + region['w'] and
+                            #     region['y'] <= cy <= region['y'] + region['h']):
+                            #     counter.add_vehicle(region["id"], vehicle_class, track_id)
 
                         
             else:
@@ -240,7 +247,7 @@ class CCTVProcessor:
 
                     for box, track_id, cls in zip(boxes, track_ids, classes):
                         x1, y1, x2, y2 = box
-                        vehicle_class = class_names.get(cls, "unknown")
+                        vehicle_class = class_names.get( str(cls), "unknown")
 
                         color = {
                             'car': (0, 255, 0),
@@ -262,6 +269,7 @@ class CCTVProcessor:
                         cy = (y1 + y2) / 2
 
                         if len(self.regions) == 0:
+                            print("vehicle_class:", vehicle_class, "track_id:", track_id)
                             counter.add_vehicle("global", vehicle_class, track_id)
                         else:
                             for region in self.regions:
@@ -302,12 +310,15 @@ class CCTVProcessor:
             
             endTime = time.time()
             elapsed = endTime - startTime
-            if elapsed > delay * 2: # 2배 이상 걸리면 본 프레임을 따라가기 위해 스킵
-                skip_count = int(elapsed / delay) - 1
-                skip_count = max(skip_count, 1)  # 최소 1개는 스킵
-                print(f"[WARNING] Inference time {elapsed:.3f}s exceeds frame delay {delay:.3f}s, skipping {skip_count} frames")
-                for _ in range(skip_count):
-                    self.cap.grab()   # 프레임 건너뛰기
+            
+            # if not self.firstLoad and elapsed > delay * 2: # 2배 이상 걸리면 본 프레임을 따라가기 위해 스킵
+            #     skip_count = int(elapsed / delay) - 1
+            #     skip_count = max(skip_count, 1)  # 최소 1개는 스킵
+            #     print(f"[WARNING] Inference time {elapsed:.3f}s exceeds frame delay {delay:.3f}s, skipping {skip_count} frames")
+            #     for _ in range(skip_count):
+            #         self.cap.grab()   # 프레임 건너뛰기
+            # # 첫 로딩은 오래 걸리므로 패스
+            # self.firstLoad = False
                     
                     
             
@@ -370,7 +381,7 @@ class CCTVProcessor:
             self.result_queue.put({
                 "frame": frame_base64,
                 "detections": detections,
-                "orig_size": (orig_w, orig_h),
+                "orig_size": (frame.shape[1], frame.shape[0]),
                 "resized_size": (resized_w, resized_h)
             })
             

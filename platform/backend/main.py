@@ -5,7 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from module.region.regionsearch import CCTVProcessor
 from module.region.vehiclecounter import VehicleCounter
-from module.utils.model_loader import load_model_registry, save_model_registry, init_default_models
+from module.utils.model_loader import load_model_registry, save_model_registry, init_default_models, get_modelMeta_by_id
 from model.model_registry import ModelMeta
 import asyncio
 import json
@@ -59,9 +59,21 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=0.01)
                 msg = json.loads(data)
-
+                
                 if msg["type"] == "config":
-                    ok_model = processor.load_model(msg.get("modelTarget","yolo11s"), msg.get("custom_weights"))
+                    # counter reset
+                    counter.reset_minute()
+                    if(msg.get("modelTarget") is None):
+                        await websocket.send_json({"type":"error","message":"modelTarget is None"})
+                        continue
+                    # set Model Meta
+                    model_meta = get_modelMeta_by_id(msg.get("modelTarget").get("id"))
+                    if model_meta is None:
+                        await websocket.send_json({"type":"error","message":"model_meta is None"})
+                        continue
+                    processor.setModelMeta(model_meta)
+                    
+                    ok_model = processor.load_model(model_meta.id, msg.get("custom_weights"))
                     if not ok_model:
                         await websocket.send_json({"type":"error","message":"model load failed"})
                         continue
@@ -74,6 +86,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     processor.regions = msg.get("regions", [])
                     processor.running = True
+                    counter.set_vehicle_types(list(model_meta.classes.values()))
                     processor.start_inference_thread(counter)
                     
 
@@ -99,13 +112,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     "frame": result["frame"],
                     "resized_size": result["resized_size"],
                     "orig_size": result["orig_size"],
-                    "detections": result["detections"],
+                    "detections_by_min": counter.get_total_counts(),
                     "stats": counter.get_region_stats()
                 })
                 
             # TIMEOUT for no frames received
-            if not processor.running:
-                await websocket.send_json({"type":"timeout","message":"30초 동안 프레임이 수신되지 않아 종료되었습니다."})
+            # if not processor.running and processor.cap is not None:
+            #     await websocket.send_json({"type":"timeout","message":"30초 동안 프레임이 수신되지 않아 종료되었습니다."})
 
             await asyncio.sleep(0.03)
 

@@ -6,10 +6,10 @@
       "display_name": "YOLO11n (Nano - Fastest)",
       "description": "Fastest model, low latency",
       "classes": {
-        "2" : "car",
-        "5" : "bus",
-        "7" : "truck",
-        "3" : "motorcycle"
+        "2": "car",
+        "5": "bus",
+        "7": "truck",
+        "3": "motorcycle"
       },
       "type": "builtin",
       "default": false,
@@ -23,13 +23,98 @@
       "display_name": "YOLO11s (Small - Balanced) ⭐",
       "description": "Balanced speed and accuracy",
       "classes": {
-        "2" : "car",
-        "5" : "bus",
-        "7" : "truck",
-        "3" : "motorcycle"
+        "2": "car",
+        "5": "bus",
+        "7": "truck",
+        "3": "motorcycle"
       },
       "type": "builtin",
       "default": true,
+      "conf": 0.25,
+      "dev": false,
+      "mode": "track"
+    },
+    {
+      "id": "abf28765",
+      "file": "model\\custom\\abf28765_best.pt",
+      "display_name": "best.pt",
+      "description": "",
+      "classes": {
+        "0": "자동차",
+        "1": "버스",
+        "2": "트럭",
+        "5": "보행자"
+      },
+      "type": "custom",
+      "default": false,
+      "conf": 0.25,
+      "dev": false,
+      "mode": "track"
+    },
+    {
+      "id": "7f4eacf9",
+      "file": "model\\custom\\7f4eacf9_best (1).pt",
+      "display_name": "best (1).pt",
+      "description": "",
+      "classes": {
+        "0": "자동차",
+        "1": "버스",
+        "2": "트럭",
+        "3": "오토바이"
+      },
+      "type": "custom",
+      "default": false,
+      "conf": 0.25,
+      "dev": false,
+      "mode": "track"
+    },
+    {
+      "id": "af9a116b",
+      "file": "model\\custom\\af9a116b_best (2).pt",
+      "display_name": "best (2).pt",
+      "description": "",
+      "classes": {
+        "0": "자동차",
+        "1": "버스",
+        "2": "트럭",
+        "3": "오토바이"
+      },
+      "type": "custom",
+      "default": false,
+      "conf": 0.25,
+      "dev": false,
+      "mode": "track"
+    },
+    {
+      "id": "e37226cb",
+      "file": "model\\custom\\e37226cb_best (3).pt",
+      "display_name": "best (3).pt",
+      "description": "",
+      "classes": {
+        "0": "자동차",
+        "1": "버스",
+        "2": "트럭",
+        "3": "오토바이"
+      },
+      "type": "custom",
+      "default": false,
+      "conf": 0.25,
+      "dev": false,
+      "mode": "track"
+    },
+    {
+      "id": "718162b6",
+      "file": "model\\custom\\718162b6_best.pt",
+      "display_name": "best.pt",
+      "description": "",
+      "classes": {
+        "0": "자동차",
+        "1": "버스",
+        "2": "트럭",
+        "3": "오토바이"
+      },
+      "type": "custom",
+      "default": false,
       "conf": 0.25,
       "dev": false,
       "mode": "track"
