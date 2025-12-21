@@ -152,6 +152,8 @@ class CCTVProcessor:
                             regionFrame,                # FIXED SIZE
                             persist=True,
                             classes= self.modelclasses,
+                            workers=1,  # to avoid deadlock
+                            device=0,
                             verbose=False
                         )
                     else:
@@ -168,10 +170,10 @@ class CCTVProcessor:
                     
                     if results[0].boxes.id is not None:
                         boxes = results[0].boxes.xyxy.cpu().numpy()
-                        # track_ids = results[0].boxes.id.cpu().numpy().astype(int)
+                        track_ids = results[0].boxes.id.cpu().numpy().astype(int)
                         classes = results[0].boxes.cls.cpu().numpy().astype(int)
 
-                        for box, cls in zip(boxes, classes):
+                        for box, track_id, cls in zip(boxes, track_ids, classes):
                             x1, y1, x2, y2 = box
                             
                             # Adjust box coordinates to full resized frame
@@ -205,12 +207,23 @@ class CCTVProcessor:
 
                             # region counting
                             counter.add_vehicle(region["id"], vehicle_class, track_id)
+                            print("vehicle_class:", vehicle_class, "track_id:", track_id, "region_id:", region["id"])
                             # cx = (x1 + x2) / 2
                             # cy = (y1 + y2) / 2
 
                             # if (region['x'] <= cx <= region['x'] + region['w'] and
                             #     region['y'] <= cy <= region['y'] + region['h']):
                             #     counter.add_vehicle(region["id"], vehicle_class, track_id)
+                            detections.append(
+                                Detection(
+                                    x1=int(x1), y1=int(y1),
+                                    x2=int(x2), y2=int(y2),
+                                    cls=vehicle_class,
+                                    track_id=track_id,
+                                    region_id=region['id']
+                                )
+                            )
+                            
 
                         
             else:
@@ -291,6 +304,9 @@ class CCTVProcessor:
 
             
 
+            # Update counter with current detections (not accumulated)
+            counter.update_current_vehicles(detections)
+            
             # Encode frame to base64
             # _, buffer = cv2.imencode(".jpg", resized, [cv2.IMWRITE_JPEG_QUALITY, 70])
             _, buffer = cv2.imencode(".jpg", plotted_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -371,6 +387,9 @@ class CCTVProcessor:
             # 시각화
             self.plot_detections(plotted_frame, detections)
             draw_regions(plotted_frame, self.regions)
+            
+            # Update counter with current detections (not accumulated)
+            counter.update_current_vehicles(detections)
             
             # Encode frame to base64
             _, buffer = cv2.imencode(".jpg", plotted_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])

@@ -107,11 +107,20 @@ async def websocket_endpoint(websocket: WebSocket):
             # Send inference result if available
             if not processor.result_queue.empty():
                 result = processor.result_queue.get()
+                
+                json_detections = [d.to_dict() for d in result["detections"]]
+                # int32 safe
+                for det in json_detections:
+                    if det["track_id"] is not None:
+                        det["track_id"] = int(det["track_id"])
+                        
+                        
                 await websocket.send_json({
                     "type": "frame",
                     "frame": result["frame"],
                     "resized_size": result["resized_size"],
                     "orig_size": result["orig_size"],
+                    "detections": json_detections,
                     "detections_by_min": counter.get_total_counts(),
                     "stats": counter.get_region_stats()
                 })

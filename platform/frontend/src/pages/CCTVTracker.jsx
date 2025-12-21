@@ -92,7 +92,7 @@ const CCTVTracker = () => {
           console.log(data);
           drawFrame(data.frame, data.detections, data.resized_size, data.orig_size);
           setRegionStats(data.stats);
-          updateVehicleCounts(data.detections);
+          updateVehicleCounts(data.stats); 
         } 
         // else if (data.type === 'counts') {
         //   updateVehicleCounts(data.counts);
@@ -143,14 +143,14 @@ const CCTVTracker = () => {
 
 
   // Update regions to backend when changed
-  useEffect(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'update_regions',
-        regions: regions
-      }));
-    }
-  }, [regions]);
+  // useEffect(() => {
+  //   if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+  //     wsRef.current.send(JSON.stringify({
+  //       type: 'update_regions',
+  //       regions: regions
+  //     }));
+  //   }
+  // }, [regions]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -236,15 +236,17 @@ const CCTVTracker = () => {
     };
     img.src = `data:image/jpeg;base64,${frameData}`;
   };
+  const getCurrentModelTargetClasses = () => {
+    return modelTarget && modelTarget.classes ? Object.values(modelTarget.classes) : Object.values(defaultClasses);
+  }
 
-  const updateVehicleCounts = (counts) => {
+  const setVehicleCounts = (counts) => {
+    // counts ex) { total: { car: 10, bus: 2, truck: 1, motorcycle: 0 } }
     const now = new Date();
     const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
-    
     setVehicleData(prev => {
       const newData = [...prev];
       const lastEntry = newData[newData.length - 1];
-      
       if (lastEntry && lastEntry.time === timeStr) {
         // Update current minute
         newData[newData.length - 1] = {
@@ -259,9 +261,53 @@ const CCTVTracker = () => {
           ...counts.total
         });
       }
-      
       return newData;
     });
+  };
+
+  const updateVehicleCounts = (stats) => {
+    // stat ex) {"global": {"car": 1, "bus": 0, "truck": 0, "motorcycle": 0}, "1766124044336": {"car": 1, "bus": 0, "truck": 0, "motorcycle": 0}}
+    const classes = getCurrentModelTargetClasses();
+    const counts = { total: {} };
+    // initialize counts
+    classes.forEach(cls => {
+      counts.total[cls] = 0;
+    });
+    // sum up counts from all regions
+    Object.keys(stats).forEach(regionId => {
+      if (regionId === 'global') return; // skip global
+      const regionCount = stats[regionId];
+      classes.forEach(cls => {
+        counts.total[cls] += regionCount[cls] || 0;
+      });
+    });
+    setVehicleCounts(counts);
+
+
+    // const now = new Date();
+    // const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+    
+    // setVehicleData(prev => {
+    //   const newData = [...prev];
+    //   const lastEntry = newData[newData.length - 1];
+      
+    //   if (lastEntry && lastEntry.time === timeStr) {
+    //     // Update current minute
+    //     newData[newData.length - 1] = {
+    //       time: timeStr,
+    //       ...counts.total
+    //     };
+    //   } else {
+    //     // New minute
+    //     if (newData.length > 60) newData.shift();
+    //     newData.push({
+    //       time: timeStr,
+    //       ...counts.total
+    //     });
+    //   }
+      
+    //   return newData;
+    // });
   };
 
   const handleMouseDown = (e) => {
@@ -505,7 +551,7 @@ const CCTVTracker = () => {
             {[0, 1, 2, 3].map(idx => {
               const region = regions[idx];
               const stats = regionStats[region?.id] || { car: 0, bus: 0, truck: 0, motorcycle: 0 };
-              console.log("Region stats:", region?.id, stats, regionStats);
+              // console.log("Region stats:", region?.id, stats, regionStats);
               return (
                 <div
                   key={idx}
