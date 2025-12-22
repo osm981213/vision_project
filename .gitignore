@@ -230,3 +230,8 @@ build/
 
 # Uploaded videos
 uploaded_videos/
+
+# captured images
+platform/backend/speed_violations/images
+violations.csv
+violation.json

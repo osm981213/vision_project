@@ -88,3 +88,50 @@ async def upload_model(
 async def update_model(model_id: str, model_data: dict):
     print(f"Updating model {model_id} with data: {model_data}")
     return update_model_in_registry(model_id, model_data)
+
+# TOF Speed CSV Export
+@router.post("/tof-speed/export-csv")
+async def export_tof_speed_csv():
+    from module.TOFSpeed.tof_speed import TOFSpeedProcessor
+    processor = TOFSpeedProcessor()
+    csv_path = processor.export_violations_csv()
+    
+    if csv_path:
+        return {"status": "success", "csv_path": csv_path}
+    else:
+        return {"status": "no_data", "message": "No violations to export"}
+
+# TOF Speed Batch Processing
+@router.post("/tof-speed/batch-process")
+async def batch_process_videos(files: list[UploadFile] = File(...)):
+    from module.TOFSpeed.tof_speed import TOFSpeedProcessor
+    
+    processor = TOFSpeedProcessor()
+    results = []
+    
+    for file in files:
+        try:
+            # Save uploaded video temporarily
+            temp_path = UPLOAD_DIR / f"batch_{uuid4().hex}{Path(file.filename).suffix}"
+            with temp_path.open("wb") as f:
+                shutil.copyfileobj(file.file, f)
+            
+            # Process video
+            processor.process_video_batch(str(temp_path))
+            
+            results.append({
+                "filename": file.filename,
+                "status": "success"
+            })
+            
+            # Clean up temp file
+            temp_path.unlink()
+            
+        except Exception as e:
+            results.append({
+                "filename": file.filename,
+                "status": "error",
+                "error": str(e)
+            })
+    
+    return {"results": results}
