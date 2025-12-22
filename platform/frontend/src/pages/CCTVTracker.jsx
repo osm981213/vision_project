@@ -957,20 +957,24 @@ const CCTVTracker = () => {
                 />
                 <label htmlFor="use-dev" className="text-sm">Use Development Model</label>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Mode</label>
-                <select
-                  value={modelParams.mode}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
-                  onChange={(e) => {
-                    // handle change
-                    setModelParams({...modelParams, mode: e.target.value});
-                  }}
-                >
-                  <option value="track">Track</option>
-                  <option value="predict">Predict</option>
-                </select>
-              </div>
+              {modelParams.dev && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Mode</label>
+                  <select
+                    value={modelParams.mode}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+                    onChange={(e) => {
+                      // handle change
+                      setModelParams({...modelParams, mode: e.target.value});
+                    }}
+                  >
+                    <option value="track">Track</option>
+                    <option value="predict">Predict</option>
+                  </select>
+                </div>
+              )
+              }
+              
               {/* classes configuration */}
               <h2 className="text-md font-bold mt-4 mb-2">🎯 Detection Classes</h2>
               {Object.entries(modelParams.classes).map(([id, name]) => (
