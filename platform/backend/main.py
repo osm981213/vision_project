@@ -1,6 +1,7 @@
 # backend/main.py
 # Optimized FastAPI + WebSocket + YOLO11s Tracking (imgsz=640)
 
+import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from module.region.regionsearch import CCTVProcessor
@@ -68,23 +69,35 @@ async def websocket_endpoint(websocket: WebSocket):
                     # counter reset
                     counter.reset_minute()
                     if(msg.get("modelTarget") is None):
-                        await websocket.send_json({"type":"error","message":"modelTarget is None"})
+                        try:
+                            await websocket.send_json({"type":"error","message":"modelTarget is None"})
+                        except:
+                            break
                         continue
                     # set Model Meta
                     model_meta = get_modelMeta_by_id(msg.get("modelTarget").get("id"))
                     if model_meta is None:
-                        await websocket.send_json({"type":"error","message":"model_meta is None"})
+                        try:
+                            await websocket.send_json({"type":"error","message":"model_meta is None"})
+                        except:
+                            break
                         continue
                     processor.setModelMeta(model_meta)
                     
                     ok_model = processor.load_model(model_meta.id, msg.get("custom_weights"))
                     if not ok_model:
-                        await websocket.send_json({"type":"error","message":"model load failed"})
+                        try:
+                            await websocket.send_json({"type":"error","message":"model load failed"})
+                        except:
+                            break
                         continue
 
                     ok_src = processor.open_source(msg.get("source_type"), msg.get("source"), UPLOAD_DIR)
                     if not ok_src:
-                        await websocket.send_json({"type":"error","message":"source open failed"})
+                        try:
+                            await websocket.send_json({"type":"error","message":"source open failed"})
+                        except:
+                            break
                         processor.running = False
                         continue
 
@@ -117,17 +130,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 for det in json_detections:
                     if det["track_id"] is not None:
                         det["track_id"] = int(det["track_id"])
-                        
-                        
-                await websocket.send_json({
-                    "type": "frame",
-                    "frame": result["frame"],
-                    "resized_size": result["resized_size"],
-                    "orig_size": result["orig_size"],
-                    "detections": json_detections,
-                    "detections_by_min": counter.get_total_counts(),
-                    "stats": counter.get_region_stats()
-                })
+                
+                try:        
+                    await websocket.send_json({
+                        "type": "frame",
+                        "frame": result["frame"],
+                        "resized_size": result["resized_size"],
+                        "orig_size": result["orig_size"],
+                        "detections": json_detections,
+                        "detections_by_min": counter.get_total_counts(),
+                        "stats": counter.get_region_stats()
+                    })
+                except:
+                    break
                 
             # TIMEOUT for no frames received
             # if not processor.running and processor.cap is not None:
@@ -159,7 +174,10 @@ async def calibrated_speed_websocket(websocket: WebSocket):
                     model_path = msg.get("model_path", "model/s_best.pt")
                     ok_model = calibrated_processor.load_model(model_path)
                     if not ok_model:
-                        await websocket.send_json({"type":"error","message":"model load failed"})
+                        try:
+                            await websocket.send_json({"type":"error","message":"model load failed"})
+                        except:
+                            break
                         continue
 
                     # Open source
@@ -169,7 +187,10 @@ async def calibrated_speed_websocket(websocket: WebSocket):
                         UPLOAD_DIR
                     )
                     if not ok_src:
-                        await websocket.send_json({"type":"error","message":"source open failed"})
+                        try:
+                            await websocket.send_json({"type":"error","message":"source open failed"})
+                        except:
+                            break
                         calibrated_processor.running = False
                         continue
 
@@ -180,11 +201,14 @@ async def calibrated_speed_websocket(websocket: WebSocket):
                         import base64
                         _, buffer = cv2.imencode('.jpg', first_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                         frame_base64 = base64.b64encode(buffer).decode('utf-8')
-                        await websocket.send_json({
-                            "type": "first_frame",
-                            "frame": frame_base64,
-                            "message": "First frame captured. Set ROI points if needed."
-                        })
+                        try:
+                            await websocket.send_json({
+                                "type": "first_frame",
+                                "frame": frame_base64,
+                                "message": "First frame captured. Set ROI points if needed."
+                            })
+                        except:
+                            break
                         # Reset position to start
                         calibrated_processor.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
@@ -206,7 +230,10 @@ async def calibrated_speed_websocket(websocket: WebSocket):
                         msg.get("width_meters"),
                         msg.get("depth_meters")
                     )
-                    await websocket.send_json({"type":"calibration_set","message":"Calibration updated"})
+                    try:
+                        await websocket.send_json({"type":"calibration_set","message":"Calibration updated"})
+                    except:
+                        break
                 
                 elif msg["type"] == "clear_calibration":
                     # Clear ROI and calibration
@@ -214,7 +241,10 @@ async def calibrated_speed_websocket(websocket: WebSocket):
                     calibrated_processor.homography_matrix = None
                     calibrated_processor.object_tracks = {}
                     calibrated_processor.object_speeds = {}
-                    await websocket.send_json({"type":"calibration_cleared","message":"ROI cleared"})
+                    try:
+                        await websocket.send_json({"type":"calibration_cleared","message":"ROI cleared"})
+                    except:
+                        break
 
             except asyncio.TimeoutError:
                 pass
@@ -238,16 +268,19 @@ async def calibrated_speed_websocket(websocket: WebSocket):
                 while not calibrated_processor.result_queue.empty():
                     try:
                         result = calibrated_processor.result_queue.get_nowait()
+                        print("Calibrated Speed - Result queue wait time:", endTime - startTime)
                     except:
                         break
-                
                 if result:
-                    await websocket.send_json({
-                        "type": "frame",
-                        "frame": result["frame"],
-                        "detections": result["detections"],
-                        "stats": result["stats"]
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "frame",
+                            "frame": result["frame"],
+                            "detections": result["detections"],
+                            "stats": result["stats"]
+                        })
+                    except:
+                        break
 
             await asyncio.sleep(0.03)
 
@@ -296,10 +329,13 @@ async def tof_speed_websocket(websocket: WebSocket):
                     tof_processor.running = True
                     tof_processor.start_inference_thread()
                     
-                    await websocket.send_json({
-                        "type": "status",
-                        "message": "Processing started"
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "status",
+                            "message": "Processing started"
+                        })
+                    except:
+                        break
                 
                 elif msg["type"] == "stop":
                     tof_processor.running = False
@@ -307,10 +343,13 @@ async def tof_speed_websocket(websocket: WebSocket):
                 elif msg["type"] == "update_settings":
                     settings = msg.get("settings", {})
                     tof_processor.update_settings(settings)
-                    await websocket.send_json({
-                        "type": "status",
-                        "message": "Settings updated"
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "status",
+                            "message": "Settings updated"
+                        })
+                    except:
+                        break
 
             except asyncio.TimeoutError:
                 pass
@@ -332,16 +371,19 @@ async def tof_speed_websocket(websocket: WebSocket):
                     pass
                 
                 if result:
-                    await websocket.send_json({
-                        "type": "frame",
-                        "frame": result["frame"],
-                        "detections": result.get("detections", []),
-                        "violations": result.get("violations", []),
-                        "settings": {
-                            "ppm_upward": tof_processor.ppm_upward,
-                            "ppm_downward": tof_processor.ppm_downward
-                        }
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "frame",
+                            "frame": result["frame"],
+                            "detections": result.get("detections", []),
+                            "violations": result.get("violations", []),
+                            "settings": {
+                                "ppm_upward": tof_processor.ppm_upward,
+                                "ppm_downward": tof_processor.ppm_downward
+                            }
+                        })
+                    except:
+                        break
 
             await asyncio.sleep(0.03)
 

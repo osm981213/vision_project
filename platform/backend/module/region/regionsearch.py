@@ -112,7 +112,7 @@ class CCTVProcessor:
                 # time.sleep(0.01)
                 continue
             if self.frame_queue.full():
-                print("Frame queue full, skipping frame queue size:", self.frame_queue.qsize())
+                # print("Frame queue full, skipping frame queue size:", self.frame_queue.qsize())
                 # emptying the queue to get the latest frame
                 self.frame_queue.get()
                 continue  # 최신 프레임만 유지 (이전 프레임 버림)
@@ -250,7 +250,7 @@ class CCTVProcessor:
                 # Calculate scaling factors
                 scale_x = orig_w / resized_w
                 scale_y = orig_h / resized_h
-                print(scale_x, scale_y , "scale")
+                # print(scale_x, scale_y , "scale")
                 
 
                 if results[0].boxes.id is not None:
@@ -282,7 +282,7 @@ class CCTVProcessor:
                         cy = (y1 + y2) / 2
 
                         if len(self.regions) == 0:
-                            print("vehicle_class:", vehicle_class, "track_id:", track_id)
+                            # print("vehicle_class:", vehicle_class, "track_id:", track_id)
                             counter.add_vehicle("global", vehicle_class, track_id)
                         else:
                             for region in self.regions:

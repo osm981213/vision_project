@@ -24,6 +24,7 @@ class CalibratedSpeedProcessor:
         
         # Calibration parameters
         self.roi_points = []  # 4 points for ROI polygon
+        self.roi_polygon = None  # Pre-computed polygon for faster checks
         self.width_real_meters = 0.0
         self.depth_real_meters = 0.0
         self.homography_matrix = None
@@ -33,11 +34,18 @@ class CalibratedSpeedProcessor:
         # Tracking data
         self.object_tracks = {}  # track_id -> [x, y]
         self.object_speeds = {}  # track_id -> speed_kmh
+        self.frame_counter = 0  # Frame counter for statistics
         
         # Speed statistics
-        self.all_speeds = []  # All recorded speeds
+        self.all_speeds = []  # All recorded speeds (max 100)
         self.max_speed = 0.0
         self.avg_speed = 0.0
+        
+        # Performance optimization
+        self.frame_skip = 0  # Process every frame by default
+        self.current_frame_skip = 0  # Counter for frame skipping
+        self.jpeg_quality = 70  # Lower quality for faster encoding
+        self.target_width = 640  # Target frame width for faster inference
         
     def load_model(self, model_path: str) -> bool:
         """Load YOLO model"""
@@ -96,6 +104,10 @@ class CalibratedSpeedProcessor:
         ])
         
         self.homography_matrix, _ = cv2.findHomography(src_pts, dst_pts)
+        
+        # Pre-compute ROI polygon for faster is_in_roi checks
+        self.roi_polygon = np.int32(roi_points).reshape((-1, 1, 2))
+        
         print(f"Calibration set: {width_meters}m x {depth_meters}m")
         
         # Reset tracking data when calibration changes
@@ -167,13 +179,15 @@ class CalibratedSpeedProcessor:
         return speed_kmh
     
     def is_in_roi(self, x: float, y: float) -> bool:
-        """Check if point is inside ROI polygon"""
-        if len(self.roi_points) != 4:
-            return False
+        """Check if point is inside ROI polygon (optimized with pre-computed polygon)"""
+        if self.roi_polygon is None:
+            return True  # Allow all objects if ROI not set
         
-        roi_polygon = np.int32(self.roi_points).reshape((-1, 1, 2))
-        point = np.array([x, y], dtype=np.float32)
-        return cv2.pointPolygonTest(roi_polygon, point, False) >= 0
+        try:
+            result = cv2.pointPolygonTest(self.roi_polygon, (x, y), False)
+            return result >= 0
+        except:
+            return True  # Allow if error occurs
     
     def update_speed_stats(self, speed_kmh: float):
         """Update speed statistics"""
@@ -192,11 +206,12 @@ class CalibratedSpeedProcessor:
             self.avg_speed = sum(self.all_speeds) / len(self.all_speeds)
     
     def inference_loop(self):
-        """Main inference loop running in separate thread"""
+        """Main inference loop running in separate thread (optimized)"""
         import time
+        
         while self.running:
             if self.frame_queue.empty():
-                time.sleep(0.001)  # Small sleep to prevent CPU spinning
+                time.sleep(0.001)
                 continue
             
             # Get latest frame, skip old ones
@@ -210,14 +225,18 @@ class CalibratedSpeedProcessor:
             if frame is None:
                 continue
             
-            # Draw ROI polygon first (should always be visible if set)
-            if len(self.roi_points) == 4:
-                roi_polygon = np.int32(self.roi_points).reshape((-1, 1, 2))
-                cv2.polylines(frame, [roi_polygon], isClosed=True, color=(0, 255, 255), thickness=4)
+            # Frame skipping for performance
+            self.current_frame_skip = (self.current_frame_skip + 1) % (self.frame_skip + 1)
+            if self.current_frame_skip != 0:
+                continue
+            
+            # Draw ROI polygon if set
+            if self.roi_polygon is not None:
+                cv2.polylines(frame, [self.roi_polygon], isClosed=True, color=(0, 255, 255), thickness=2)
             
             if self.model is None:
-                # Even without model, send frame with ROI drawn
-                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                # Send frame with ROI drawn (no model loaded yet)
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
                 result = {
                     "frame": frame_base64,
@@ -229,17 +248,19 @@ class CalibratedSpeedProcessor:
                     }
                 }
                 if self.result_queue.full():
-                    self.result_queue.get()
+                    try:
+                        self.result_queue.get_nowait()
+                    except:
+                        pass
                 self.result_queue.put(result)
                 continue
             
-            # Run YOLO tracking
+            # Run YOLO tracking with optimized settings
             results = self.model.track(
                 frame,
                 persist=True,
-                conf=0.35,
-                iou=0.5,
-                imgsz=1280,
+                conf=0.3,
+                iou=0.45,
                 verbose=False
             )
             
@@ -247,14 +268,13 @@ class CalibratedSpeedProcessor:
             detections = []
             
             if results and results[0].boxes is not None and results[0].boxes.id is not None:
-                # print(results[0].boxes)
                 boxes = results[0].boxes.xyxy.cpu().numpy().astype(int)
                 track_ids = results[0].boxes.id.cpu().numpy().astype(int)
                 class_indices = results[0].boxes.cls.cpu().numpy().astype(int)
                 
                 for box, track_id, cls_idx in zip(boxes, track_ids, class_indices):
                     x1, y1, x2, y2 = box
-                    center_x = (x1 + x2) // 2
+                    center_x = (x1 + x2) >> 1  # Faster than // 2
                     bottom_y = y2
                     
                     # Only process objects in ROI
@@ -282,7 +302,6 @@ class CalibratedSpeedProcessor:
                         "center": [int(center_x), int(bottom_y)],
                         "speed_kmh": float(display_speed) if display_speed is not None else None
                     })
-            
             # Draw detections on frame
             for det in detections:
                 x1, y1, x2, y2 = det["bbox"]
@@ -293,10 +312,10 @@ class CalibratedSpeedProcessor:
                     label += f': {det["speed_kmh"]:.1f} km/h'
                 
                 cv2.putText(frame, label, (x1, y1 - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
             
             # Encode frame to base64
-            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             frame_base64 = base64.b64encode(buffer).decode('utf-8')
             
             # Put result in queue (keep only latest)
