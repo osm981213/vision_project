@@ -63,6 +63,13 @@ def load_model_registry():
 
     return models
 
+def get_modelMeta_by_id(model_id: str) -> ModelMeta | None:
+    models = load_model_registry()
+    for m in models:
+        if m.id == model_id:
+            return m
+    return None
+
 # 모델 레지스트리 저장 함수
 # ModelMeta 객체 목록을 JSON 파일로 저장
 # 예) {"models": [ { "id": "model1", "file": "path/to/model1.pt", "display_name": "Model 1", ... }, ... ]}
@@ -72,6 +79,22 @@ def save_model_registry(models: list[ModelMeta]):
     }
     with MODEL_JSON.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+        
+# 모델 레지스트리 수정 함수
+def update_model_in_registry(model_id: str, update_model: dict):
+    models = load_model_registry()
+    returns = {"error": "model not found"}
+    for i, m in enumerate(models):
+        if m.id == model_id:
+            for key, value in update_model.items():
+                if hasattr(m, key):
+                    setattr(m, key, value)
+            models[i] = m
+            returns = {"status": "success", "model": m.__dict__}
+            break
+        
+    save_model_registry(models)
+    return returns
         
 # YOLO의 자동 다운로드 기능을 이용해
 # 모델이 없으면 받아오고, 있으면 그대로 사용
