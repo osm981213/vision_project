@@ -93,12 +93,18 @@ class TOFSpeedProcessor:
     def open_source(self, source_type, source, upload_dir):
         try:
             if source_type == 'rtsp':
-                self.cap = cv2.VideoCapture(source)
+                self.cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+                self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
             elif source_type == 'file':
                 video_path = self.resolve_video_path(upload_dir, source)
                 self.cap = cv2.VideoCapture(video_path)
             elif source_type == 'http':
-                self.cap = cv2.VideoCapture(source)
+                self.cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+                self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
             else:
                 raise ValueError(f"Unknown source type: {source_type}")
             
@@ -353,6 +359,7 @@ class TOFSpeedProcessor:
                 persist=True,
                 tracker="bytetrack.yaml",
                 verbose=False,
+                device=0,
                 classes=[int(k) for k in class_keys]
             )
             

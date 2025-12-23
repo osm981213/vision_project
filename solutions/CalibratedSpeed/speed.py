@@ -13,14 +13,16 @@ from ultralytics import YOLO
 # =========================
 # 0) 사용자 설정
 # =========================
-MODEL_PATH = "solutions/CalibratedSpeed/m_best.pt"
+# MODEL_PATH = "solutions/CalibratedSpeed/m_best.pt"
+MODEL_PATH = "m_best.pt"
 # MODEL_PATH = "solutions/CalibratedSpeed/s_best.pt"
 
 VIDEO_PATH = "https://strm1.spatic.go.kr/live/5.stream/playlist.m3u8"               # 수색교 교차로
 # VIDEO_PATH = "https://stream6.bcits.go.kr/bucheon/TM090TC08P.stream/playlist.m3u8"  # 소사역 앞
 
 # ByteTrack 설정 파일(✅ 직접 만들어둔 yaml 경로를 넣어)
-TRACKER_YAML = "solutions/CalibratedSpeed/bytetrack_speed.yaml"
+# TRACKER_YAML = "solutions/CalibratedSpeed/bytetrack_speed.yaml"
+TRACKER_YAML = "bytetrack_speed.yaml"
 
 
 # FPS 고정 (캡쳐가 FPS를 이상하게 주는 경우가 있어서)

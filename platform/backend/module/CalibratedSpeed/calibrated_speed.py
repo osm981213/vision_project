@@ -64,7 +64,8 @@ class CalibratedSpeedProcessor:
                 video_path = upload_dir / source
                 self.cap = cv2.VideoCapture(str(video_path))
             elif source_type == "stream":
-                self.cap = cv2.VideoCapture(source)
+                self.cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             elif source_type == "webcam":
                 self.cap = cv2.VideoCapture(int(source))
             else:
@@ -73,6 +74,11 @@ class CalibratedSpeedProcessor:
             if not self.cap.isOpened():
                 print(f"Failed to open source: {source}")
                 return False
+            
+            # Set connection timeout for streams
+            if source_type == "stream":
+                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+                self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
             
             print(f"Source opened: {source_type} - {source}")
             return True
@@ -109,13 +115,15 @@ class CalibratedSpeedProcessor:
         self.roi_polygon = np.int32(roi_points).reshape((-1, 1, 2))
         
         print(f"Calibration set: {width_meters}m x {depth_meters}m")
+        print(f"ROI boundaries: [{roi_points}]")
         
-        # Reset tracking data when calibration changes
+        # Reset tracking data when calibration changes (clear old tracks outside new ROI)
         self.object_tracks = {}
         self.object_speeds = {}
         self.all_speeds = []
         self.max_speed = 0.0
         self.avg_speed = 0.0
+        print("All previous tracks cleared - tracking only within new ROI")
     
     def get_group_label(self, cls_idx: int) -> str:
         """Group vehicle classes into simplified categories"""
@@ -181,13 +189,13 @@ class CalibratedSpeedProcessor:
     def is_in_roi(self, x: float, y: float) -> bool:
         """Check if point is inside ROI polygon (optimized with pre-computed polygon)"""
         if self.roi_polygon is None:
-            return True  # Allow all objects if ROI not set
+            return False  # No ROI set = no tracking (strict mode)
         
         try:
             result = cv2.pointPolygonTest(self.roi_polygon, (x, y), False)
             return result >= 0
         except:
-            return True  # Allow if error occurs
+            return False  # Deny if error occurs
     
     def update_speed_stats(self, speed_kmh: float):
         """Update speed statistics"""
@@ -208,7 +216,8 @@ class CalibratedSpeedProcessor:
     def inference_loop(self):
         """Main inference loop running in separate thread (optimized)"""
         import time
-        
+        # check model device
+        print(self.model.device)
         while self.running:
             if self.frame_queue.empty():
                 time.sleep(0.001)
@@ -230,12 +239,22 @@ class CalibratedSpeedProcessor:
             if self.current_frame_skip != 0:
                 continue
             
-            # Draw ROI polygon if set
+            # Draw ROI polygon with status indicator
             if self.roi_polygon is not None:
-                cv2.polylines(frame, [self.roi_polygon], isClosed=True, color=(0, 255, 255), thickness=2)
+                cv2.polylines(frame, [self.roi_polygon], isClosed=True, color=(0, 255, 255), thickness=3)
+                cv2.putText(frame, "ROI ACTIVE - Tracking Inside Only", (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            else:
+                cv2.putText(frame, "No ROI - Set ROI to enable tracking", (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        #    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             
             if self.model is None:
                 # Send frame with ROI drawn (no model loaded yet)
+                if len(self.roi_points) != 4:
+                    # Show message when no ROI is set
+                    cv2.putText(frame, "Set ROI to enable tracking", (10, frame.shape[0] - 20),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                 _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
                 result = {
@@ -261,11 +280,13 @@ class CalibratedSpeedProcessor:
                 persist=True,
                 conf=0.3,
                 iou=0.45,
+                device=0,
                 verbose=False
             )
             
             # Process detections
             detections = []
+            active_track_ids = set()  # Track IDs currently in ROI
             
             if results and results[0].boxes is not None and results[0].boxes.id is not None:
                 boxes = results[0].boxes.xyxy.cpu().numpy().astype(int)
@@ -277,9 +298,13 @@ class CalibratedSpeedProcessor:
                     center_x = (x1 + x2) >> 1  # Faster than // 2
                     bottom_y = y2
                     
-                    # Only process objects in ROI
-                    if not self.is_in_roi(center_x, bottom_y):
+                    # STRICT ROI CHECK: Only process objects with center point inside ROI
+                    if len(self.roi_points) == 4 and not self.is_in_roi(center_x, bottom_y):
+                        # Skip this detection entirely - not in ROI
                         continue
+                    
+                    # Track this ID as active in ROI
+                    active_track_ids.add(track_id)
                     
                     # Calculate speed
                     speed_kmh = self.calculate_speed(track_id, center_x, bottom_y)
@@ -302,7 +327,14 @@ class CalibratedSpeedProcessor:
                         "center": [int(center_x), int(bottom_y)],
                         "speed_kmh": float(display_speed) if display_speed is not None else None
                     })
-            # Draw detections on frame
+            
+            # Clean up tracks that are no longer in ROI (vehicles that left the ROI)
+            tracks_to_remove = [tid for tid in self.object_tracks.keys() if tid not in active_track_ids]
+            for tid in tracks_to_remove:
+                self.object_tracks.pop(tid, None)
+                self.object_speeds.pop(tid, None)
+            
+            # Draw detections on frame (ONLY ROI detections)
             for det in detections:
                 x1, y1, x2, y2 = det["bbox"]
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)

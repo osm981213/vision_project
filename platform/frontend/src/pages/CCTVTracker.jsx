@@ -4,7 +4,7 @@ import { Camera, Play, Pause, RotateCcw, X, Settings, Upload, Video, ChevronsDow
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const CCTVTracker = () => {
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [regions, setRegions] = useState([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentRect, setCurrentRect] = useState(null);
@@ -20,10 +20,10 @@ const CCTVTracker = () => {
   ]);
   
   // Settings
-  const [sourceType, setSourceType] = useState('rtsp');
+  const [sourceType, setSourceType] = useState('url');
   const [rtspUrl, setRtspUrl] = useState('rtsp://admin:password@192.168.1.100:554/stream');
   const [videoFile, setVideoFile] = useState(null);
-  const [httpUrl, setHttpUrl] = useState("");
+  const [httpUrl, setHttpUrl] = useState("https://strm1.spatic.go.kr/live/30.stream/playlist.m3u8");
   // model original target
   const [modelTarget, setModelTarget] = useState({id: 'yolo11s', display_name: 'YOLO11s (Small - Balanced) ⭐', description: 'Balanced speed and accuracy', conf: 0.3, dev: false, mode: "track", classes: {"2": "car", "3": "motorcycle", "5": "bus", "7": "truck"}});
   const [customWeights, setCustomWeights] = useState('');
@@ -490,15 +490,17 @@ const CCTVTracker = () => {
               <Camera className="w-5 h-5" />
               <h2 className="text-lg font-bold">CCTV Feed</h2>
             </div>
-            <button
-              onClick={togglePlayPause}
-              className={`px-4 py-2 rounded flex items-center gap-2 ${
-                isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
-            >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-              {isPlaying ? 'Stop' : 'Start'}
-            </button>
+            {sourceType === 'file' && (
+              <button
+                onClick={togglePlayPause}
+                className={`px-4 py-2 rounded flex items-center gap-2 ${
+                  isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                {isPlaying ? 'Stop' : 'Start'}
+              </button>
+            )}
           </div>
           
           {/* <div className="relative w-full aspect-video bg-black rounded"> */}

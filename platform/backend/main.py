@@ -24,6 +24,11 @@ processor = CCTVProcessor()
 calibrated_processor = CalibratedSpeedProcessor()
 tof_processor = TOFSpeedProcessor()
 
+# Track active WebSocket connections for each processor
+active_cctv_connections = set()
+active_calibrated_connections = set()
+active_tof_connections = set()
+
 MODEL_DIR = Path("model")
 CUSTOM_MODEL_DIR = MODEL_DIR / "custom"
 UPLOAD_DIR = Path("uploaded_videos")
@@ -56,7 +61,9 @@ app.add_middleware(
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("WebSocket connected")
+    connection_id = id(websocket)
+    active_cctv_connections.add(connection_id)
+    print(f"WebSocket connected (ID: {connection_id}, Active: {len(active_cctv_connections)})")
 
     try:
         while True:
@@ -83,7 +90,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             break
                         continue
                     processor.setModelMeta(model_meta)
-                    
+                        
                     ok_model = processor.load_model(model_meta.id, msg.get("custom_weights"))
                     if not ok_model:
                         try:
@@ -104,7 +111,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     processor.regions = msg.get("regions", [])
                     processor.running = True
                     counter.set_vehicle_types(list(model_meta.classes.values()))
-                    processor.start_inference_thread(counter)
+                    # stop any existing inference thread
+                    # processor.stop_inference_thread()
+                    # dev면 predict 모드 체크
+                    if getattr(model_meta, "dev", False):
+                        processor.mode = msg.get("modelTarget").get("mode", "track")
+                        processor.start_inference_thread_auto(counter)
+                    else:
+                        print("test22")
+                        processor.mode = "track"  # 기존대로
+                        processor.start_inference_thread(counter)
                     
 
                 elif msg["type"] == "update_regions":
@@ -151,8 +167,13 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(0.03)
 
     except WebSocketDisconnect:
-        processor.running = False
-        print("WebSocket disconnected")
+        active_cctv_connections.discard(connection_id)
+        print(f"WebSocket disconnected (ID: {connection_id}, Active: {len(active_cctv_connections)})")
+        
+        # Only stop processor if no more active connections
+        if len(active_cctv_connections) == 0:
+            processor.running = False
+            print("All CCTV connections closed - stopping processor")
 
 # --------------------------
 # CALIBRATED SPEED WEBSOCKET
@@ -160,7 +181,9 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.websocket("/ws/calibrated-speed")
 async def calibrated_speed_websocket(websocket: WebSocket):
     await websocket.accept()
-    print("Calibrated Speed WebSocket connected")
+    connection_id = id(websocket)
+    active_calibrated_connections.add(connection_id)
+    print(f"Calibrated Speed WebSocket connected (ID: {connection_id}, Active: {len(active_calibrated_connections)})")
 
     try:
         while True:
@@ -268,7 +291,7 @@ async def calibrated_speed_websocket(websocket: WebSocket):
                 while not calibrated_processor.result_queue.empty():
                     try:
                         result = calibrated_processor.result_queue.get_nowait()
-                        print("Calibrated Speed - Result queue wait time:", endTime - startTime)
+                        # print("Calibrated Speed - Result queue wait time:", endTime - startTime)
                     except:
                         break
                 if result:
@@ -285,8 +308,13 @@ async def calibrated_speed_websocket(websocket: WebSocket):
             await asyncio.sleep(0.03)
 
     except WebSocketDisconnect:
-        calibrated_processor.running = False
-        print("Calibrated Speed WebSocket disconnected")
+        active_calibrated_connections.discard(connection_id)
+        print(f"Calibrated Speed WebSocket disconnected (ID: {connection_id}, Active: {len(active_calibrated_connections)})")
+        
+        # Only stop processor if no more active connections
+        if len(active_calibrated_connections) == 0:
+            calibrated_processor.running = False
+            print("All Calibrated Speed connections closed - stopping processor")
 
 # --------------------------
 # TOF SPEED WEBSOCKET
@@ -294,7 +322,9 @@ async def calibrated_speed_websocket(websocket: WebSocket):
 @app.websocket("/ws/tof-speed")
 async def tof_speed_websocket(websocket: WebSocket):
     await websocket.accept()
-    print("TOF Speed WebSocket connected")
+    connection_id = id(websocket)
+    active_tof_connections.add(connection_id)
+    print(f"TOF Speed WebSocket connected (ID: {connection_id}, Active: {len(active_tof_connections)})")
 
     try:
         while True:
@@ -388,8 +418,13 @@ async def tof_speed_websocket(websocket: WebSocket):
             await asyncio.sleep(0.03)
 
     except WebSocketDisconnect:
-        tof_processor.running = False
-        print("TOF Speed WebSocket disconnected")
+        active_tof_connections.discard(connection_id)
+        print(f"TOF Speed WebSocket disconnected (ID: {connection_id}, Active: {len(active_tof_connections)})")
+        
+        # Only stop processor if no more active connections
+        if len(active_tof_connections) == 0:
+            tof_processor.running = False
+            print("All TOF Speed connections closed - stopping processor")
 
 # --------------------------
 # REST API

@@ -235,3 +235,4 @@ uploaded_videos/
 platform/backend/speed_violations/images
 violations.csv
 violation.json
+models.json

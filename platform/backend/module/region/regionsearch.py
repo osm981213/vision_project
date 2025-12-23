@@ -59,15 +59,20 @@ class CCTVProcessor:
                 self.cap.release()
 
             if source_type == "rtsp":
-                self.cap = cv2.VideoCapture(source)
+                self.cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+                self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
             elif source_type == "file":
                 # source는 video_id
                 path = self.resolve_video_path(upload_dir, source)
                 self.cap = cv2.VideoCapture(path)
 
             elif source_type == "url":
-                self.cap = cv2.VideoCapture(source)
+                self.cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+                self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
 
             if not self.cap.isOpened():
                 print("Failed to open video source")
@@ -102,22 +107,28 @@ class CCTVProcessor:
             if self.cap is None:
                 time.sleep(0.01)
                 continue
-            if self.frame_queue.empty():
-                # # timeout 처리 30초 지나도 프레임이 안들어오면 out
-                # timewait += 0.01
-                # if timewait >= self.time_out:
-                #     print(self.time_out_msg)
-                #     self.running = False
-                #     break
-                # time.sleep(0.01)
+            # if self.frame_queue.empty():
+            #     # # timeout 처리 30초 지나도 프레임이 안들어오면 out
+            #     # timewait += 0.01
+            #     # if timewait >= self.time_out:
+            #     #     print(self.time_out_msg)
+            #     #     self.running = False
+            #     #     break
+            #     # time.sleep(0.01)
+            #     continue
+            # if self.frame_queue.full():
+            #     # print("Frame queue full, skipping frame queue size:", self.frame_queue.qsize())
+            #     # emptying the queue to get the latest frame
+            #     self.frame_queue.get()
+            #     continue  # 최신 프레임만 유지 (이전 프레임 버림)
+            frame = None
+            try:
+                frame = self.frame_queue.get(timeout=0.01)
+            except:
                 continue
-            if self.frame_queue.full():
-                # print("Frame queue full, skipping frame queue size:", self.frame_queue.qsize())
-                # emptying the queue to get the latest frame
-                self.frame_queue.get()
-                continue  # 최신 프레임만 유지 (이전 프레임 버림)
+
             startTime = time.time()
-            frame = self.frame_queue.get()
+            # frame = self.frame_queue.get()
             resized_w = 640
             resized_h = 360
 
@@ -160,6 +171,9 @@ class CCTVProcessor:
                         results = self.loadedModel.predict(
                             regionFrame,                # FIXED SIZE
                             classes= self.modelclasses,
+                            conf=self.modelMeta.conf,
+                            worker=1,  # to avoid deadlock
+                            device=0,
                             verbose=False
                         )
                     
@@ -207,7 +221,7 @@ class CCTVProcessor:
 
                             # region counting
                             counter.add_vehicle(region["id"], vehicle_class, track_id)
-                            print("vehicle_class:", vehicle_class, "track_id:", track_id, "region_id:", region["id"])
+                            # print("vehicle_class:", vehicle_class, "track_id:", track_id, "region_id:", region["id"])
                             # cx = (x1 + x2) / 2
                             # cy = (y1 + y2) / 2
 
@@ -337,7 +351,178 @@ class CCTVProcessor:
             # self.firstLoad = False
                     
                     
-            
+    # regionsearch.py (CCTVProcessor 내부)
+    
+    
+    # dev=True 일 때 쓰기 좋은 "predict 전용" inference_worker
+    # - track_id 없음 (항상 None)
+    # - region crop별로 predict 수행
+    # - 결과는 기존 result_queue 포맷 그대로 유지
+    # - counter.update_current_vehicles(detections)만 사용 (add_vehicle 미사용)
+
+    import base64
+    import time
+    import cv2
+
+    def inference_worker_predict(self, counter: "VehicleCounter"):
+        if self.loadedModel is None or self.modelMeta is None:
+            print("inference_worker_predict: model or modelMeta is None")
+            return
+
+        # modelMeta.classes: {"2":"car", "3":"motorcycle", ...} 형태라고 가정
+        class_names = self.modelMeta.classes
+
+        # YOLO classes 인자에 넣을 int 리스트 만들기
+        self.modelclasses = []
+        for k in class_names.keys():
+            try:
+                self.modelclasses.append(int(k))
+            except:
+                pass
+
+        resized_w, resized_h = 640, 360
+        conf = getattr(self.modelMeta, "conf", None)
+
+        while self.running:
+            # 프레임 받아오기 (최신 프레임만 쓰려면 main에서 이미 drop하고 있다고 가정)
+            try:
+                frame = self.frame_queue.get(timeout=0.01)
+            except:
+                continue
+
+            start_time = time.time()
+
+            # resize (프론트/region 좌표가 640x360 기준으로 넘어온다고 가정)
+            resized = cv2.resize(frame, (resized_w, resized_h))
+            plotted_frame = resized.copy()
+            detections = []
+
+            # regions 없으면 global로 전체 프레임을 1개 region으로 처리
+            regions = self.regions if self.regions else [{
+                "id": "global",
+                "x": 0,
+                "y": 0,
+                "w": resized_w,
+                "h": resized_h
+            }]
+
+            # region 단위 predict
+            for region in regions:
+                rx1 = int(region.get("x", 0))
+                ry1 = int(region.get("y", 0))
+                rx2 = int(rx1 + int(region.get("w", 0)))
+                ry2 = int(ry1 + int(region.get("h", 0)))
+
+                # clamp
+                rx1 = max(0, min(rx1, resized_w - 1))
+                ry1 = max(0, min(ry1, resized_h - 1))
+                rx2 = max(0, min(rx2, resized_w))
+                ry2 = max(0, min(ry2, resized_h))
+                if rx2 <= rx1 or ry2 <= ry1:
+                    continue
+
+                crop = resized[ry1:ry2, rx1:rx2]
+                if crop.size == 0:
+                    continue
+
+                # predict
+                kwargs = {
+                    "classes": self.modelclasses,
+                    "verbose": False
+                }
+                if conf is not None:
+                    kwargs["conf"] = conf
+
+                results = self.loadedModel.predict(crop, **kwargs)
+                if not results or results[0].boxes is None:
+                    continue
+
+                boxes = results[0].boxes
+                if boxes is None or len(boxes) == 0:
+                    continue
+
+                xyxys = boxes.xyxy.cpu().numpy()
+                clss = boxes.cls.cpu().numpy().astype(int)
+
+                # 결과를 full resized 좌표계로 되돌리고 detections 구성
+                for (bx1, by1, bx2, by2), cls_id in zip(xyxys, clss):
+                    x1 = int(bx1 + rx1)
+                    y1 = int(by1 + ry1)
+                    x2 = int(bx2 + rx1)
+                    y2 = int(by2 + ry1)
+
+                    vehicle_class = class_names.get(str(cls_id), "unknown")
+
+                    # draw bbox + label (track_id 없음)
+                    color = {
+                        "car": (0, 255, 0),
+                        "bus": (0, 0, 255),
+                        "truck": (0, 165, 255),
+                        "motorcycle": (255, 200, 0),
+                    }.get(vehicle_class, (255, 255, 255))
+
+                    cv2.rectangle(plotted_frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(
+                        plotted_frame,
+                        f"{vehicle_class}",
+                        (x1, max(0, y1 - 5)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        color,
+                        1
+                    )
+
+                    detections.append(
+                        Detection(
+                            x1=x1, y1=y1,
+                            x2=x2, y2=y2,
+                            cls=vehicle_class,
+                            track_id=None,
+                            region_id=region["id"]
+                        )
+                    )
+
+            # region 박스 그리기
+            for region in self.regions:
+                cv2.rectangle(
+                    plotted_frame,
+                    (int(region["x"]), int(region["y"])),
+                    (int(region["x"] + region["w"]), int(region["y"] + region["h"])),
+                    (0, 255, 255), 2
+                )
+                cv2.putText(
+                    plotted_frame,
+                    f"Region {region['id']}",
+                    (int(region["x"]), max(0, int(region["y"]) - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 255),
+                    1
+                )
+
+            # 현재 프레임 기준 카운트 업데이트 (track_id 필요 없음)
+            counter.update_current_vehicles(detections)
+
+            # encode & push
+            ok, buffer = cv2.imencode(".jpg", plotted_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if not ok:
+                continue
+            frame_base64 = base64.b64encode(buffer).decode("utf-8")
+
+            if self.result_queue.full():
+                try:
+                    self.result_queue.get_nowait()
+                except:
+                    pass
+
+            self.result_queue.put({
+                "frame": frame_base64,
+                "detections": detections,
+                "orig_size": (frame.shape[1], frame.shape[0]),
+                "resized_size": (resized_w, resized_h),
+                "elapsed": time.time() - start_time
+            })
+
 
     # --------------------------
     # Inference Wroker Thread 추론 버전 2
@@ -348,11 +533,11 @@ class CCTVProcessor:
         for k in class_names.keys():
             self.modelclasses.append( int(k) )
         delay = 0
-        if self.cap is not None:
-            delay = 1.0 / self.cap.get(cv2.CAP_PROP_FPS)  # ms 단위
-            self.cap.get(cv2.CAP_PROP_FPS)
-            print("FPS:", self.cap.get(cv2.CAP_PROP_FPS))
-            print("Delay between frames (s):", delay)
+        # if self.cap is not None:
+        #     delay = 1.0 / self.cap.get(cv2.CAP_PROP_FPS)  # ms 단위
+        #     self.cap.get(cv2.CAP_PROP_FPS)
+        #     print("FPS:", self.cap.get(cv2.CAP_PROP_FPS))
+        #     print("Delay between frames (s):", delay)
         while self.running:
             if self.cap is None:
                 time.sleep(0.01)
@@ -439,6 +624,55 @@ class CCTVProcessor:
         )        
         self.inference_thread.start()
         print("Inference thread started")
+        
+    # regionsearch.py (CCTVProcessor 내부)
+    # dev=True일 때 predict worker를 쓰도록 start 함수 하나 추가 (선택)
+
+    def start_inference_thread_auto(self, counter: "VehicleCounter"):
+        if self.inference_thread and self.inference_thread.is_alive():
+            return
+
+        use_predict = bool(getattr(self.modelMeta, "dev", False))
+        print("use_predict", use_predict)
+
+        target = self.inference_worker if use_predict else self.inference_worker
+
+        self.inference_thread = threading.Thread(
+            target=target,
+            args=(counter,),
+            daemon=True
+        )
+        self.inference_thread.start()
+        print("Inference thread started:", "predict" if use_predict else "track")
+
+
+    def stop_inference_thread(self):
+            """현재 inference thread를 안전하게 종료"""
+            if self.inference_thread and self.inference_thread.is_alive():
+                self.running = False  # worker 루프 종료 신호
+                try:
+                    self.inference_thread.join(timeout=1.0)
+                except:
+                    pass
+
+            self.inference_thread = None
+
+            # queue 정리 (중요)
+            while not self.frame_queue.empty():
+                try:
+                    self.frame_queue.get_nowait()
+                except:
+                    break
+
+            while not self.result_queue.empty():
+                try:
+                    self.result_queue.get_nowait()
+                except:
+                    break
+        
+    # --------------------------
+    # Detection Plotter
+    # --------------------------
         
     def plot_detections(self, plotted_frame, detections):
         for d in detections:
@@ -594,6 +828,7 @@ class TrackInference:
                     persist=True,
                     classes=[classKeys],
                     conf= self.model_meta.conf,
+                    max_det=100,
                     verbose=False
                 )
                 boxes = results[0].boxes
